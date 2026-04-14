@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: cave_catalog
+      POSTGRES_PASSWORD: cave_catalog
+      POSTGRES_DB: cave_catalog
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cave_catalog"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  catalog-service:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://cave_catalog:cave_catalog@postgres:5432/cave_catalog
+      AUTH_ENABLED: "false"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg-data:
