@@ -8,16 +8,10 @@ API) are patched via monkeypatch on the validation module.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
-import pytest
-from fastapi.testclient import TestClient
-
 from cave_catalog.schemas import ValidationCheck, ValidationReport
-
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,7 +55,9 @@ def _patch_validation(monkeypatch, report: ValidationReport | None = None) -> No
 async def _register(client, monkeypatch, **overrides) -> dict:
     """Helper: register an asset and return the response JSON."""
     _patch_validation(monkeypatch)
-    resp = await client.post("/api/v1/assets/register", json=_asset_payload(**overrides))
+    resp = await client.post(
+        "/api/v1/assets/register", json=_asset_payload(**overrides)
+    )
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -97,14 +93,16 @@ async def test_register_duplicate_returns_409(client, monkeypatch):
 async def test_register_validates_null_mat_version(client, monkeypatch):
     _patch_validation(monkeypatch)
     response = await client.post(
-        "/api/v1/assets/register", json=_asset_payload(mat_version=None, name="embeddings")
+        "/api/v1/assets/register",
+        json=_asset_payload(mat_version=None, name="embeddings"),
     )
     assert response.status_code == 201
 
     # Second registration with same (datastack, name, revision, mat_version=None) → 409
     _patch_validation(monkeypatch)
     response2 = await client.post(
-        "/api/v1/assets/register", json=_asset_payload(mat_version=None, name="embeddings")
+        "/api/v1/assets/register",
+        json=_asset_payload(mat_version=None, name="embeddings"),
     )
     assert response2.status_code == 409
 
@@ -201,7 +199,9 @@ async def test_list_filters_by_name(client, monkeypatch):
     await _register(client, monkeypatch, name="synapses")
     await _register(client, monkeypatch, name="embeddings")
 
-    response = await client.get("/api/v1/assets/?datastack=minnie65_public&name=synapses")
+    response = await client.get(
+        "/api/v1/assets/?datastack=minnie65_public&name=synapses"
+    )
 
     data = response.json()
     assert len(data) == 1
@@ -212,7 +212,9 @@ async def test_list_filters_by_maturity(client, monkeypatch):
     await _register(client, monkeypatch, name="stable_table", maturity="stable")
     await _register(client, monkeypatch, name="draft_table", maturity="draft")
 
-    response = await client.get("/api/v1/assets/?datastack=minnie65_public&maturity=stable")
+    response = await client.get(
+        "/api/v1/assets/?datastack=minnie65_public&maturity=stable"
+    )
 
     data = response.json()
     assert all(a["maturity"] == "stable" for a in data)
@@ -221,7 +223,8 @@ async def test_list_filters_by_maturity(client, monkeypatch):
 async def test_list_excludes_expired(client, monkeypatch):
     await _register(client, monkeypatch, name="live_table")
     await _register(
-        client, monkeypatch,
+        client,
+        monkeypatch,
         name="old_table",
         expires_at="2020-01-01T00:00:00Z",
     )
@@ -250,7 +253,9 @@ async def test_get_asset_not_found(client):
 
 
 async def test_get_asset_expired_returns_404(client, monkeypatch):
-    asset = await _register(client, monkeypatch, name="old", expires_at="2020-01-01T00:00:00Z")
+    asset = await _register(
+        client, monkeypatch, name="old", expires_at="2020-01-01T00:00:00Z"
+    )
     response = await client.get(f"/api/v1/assets/{asset['id']}")
     assert response.status_code == 404
 

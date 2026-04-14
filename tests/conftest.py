@@ -1,12 +1,10 @@
-import os
+import httpx
 import pytest
 import pytest_asyncio
-import httpx
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from cave_catalog.config import get_settings
 from cave_catalog.db.models import Base
 from cave_catalog.db.session import get_session, reset_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 @pytest.fixture(autouse=True)

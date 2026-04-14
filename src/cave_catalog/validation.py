@@ -71,18 +71,24 @@ async def check_uri_reachable(uri: str, client: AsyncClient) -> ValidationCheck:
         return ValidationCheck(passed=False, message=f"URI unreachable: {exc}")
 
 
-async def check_format_sniff(uri: str, fmt: str, client: AsyncClient) -> ValidationCheck:
+async def check_format_sniff(
+    uri: str, fmt: str, client: AsyncClient
+) -> ValidationCheck:
     """Verify that the URI prefix contains format-specific marker files."""
     signatures = FORMAT_SIGNATURES.get(fmt.lower())
     if signatures is None:
         # Unknown format — skip sniff, pass through
-        return ValidationCheck(passed=True, message=f"No sniff signatures for format '{fmt}'")
+        return ValidationCheck(
+            passed=True, message=f"No sniff signatures for format '{fmt}'"
+        )
 
     base = uri.rstrip("/") + "/"
     for sig in signatures:
         url = _uri_to_http_url(base + sig)
         if url is None:
-            return ValidationCheck(passed=False, message=f"Unrecognised URI scheme for sniff: {uri}")
+            return ValidationCheck(
+                passed=False, message=f"Unrecognised URI scheme for sniff: {uri}"
+            )
         try:
             response = await client.head(url, follow_redirects=True, timeout=10.0)
             if response.status_code < 400:
@@ -105,7 +111,9 @@ async def check_mat_table(
     """Verify a materialization table + version exist via the MaterializationEngine API."""
     settings = get_settings()
     if not settings.mat_engine_url:
-        logger.warning("mat_table_verify_skipped", reason="MAT_ENGINE_URL not configured")
+        logger.warning(
+            "mat_table_verify_skipped", reason="MAT_ENGINE_URL not configured"
+        )
         return ValidationCheck(
             passed=True,
             message="mat_table_verify skipped: MAT_ENGINE_URL not configured",
@@ -146,7 +154,10 @@ async def check_name_reservation(
     """
     settings = get_settings()
     if not settings.mat_engine_url:
-        return ValidationCheck(passed=True, message="name_reservation skipped: MAT_ENGINE_URL not configured")
+        return ValidationCheck(
+            passed=True,
+            message="name_reservation skipped: MAT_ENGINE_URL not configured",
+        )
 
     base = settings.mat_engine_url.rstrip("/")
     url = f"{base}/api/v2/datastack/{datastack}/tables"
@@ -155,13 +166,12 @@ async def check_name_reservation(
         if response.status_code != 200:
             # Can't reach ME — skip the check rather than block registration
             return ValidationCheck(
-                passed=True, message=f"name_reservation skipped: ME returned {response.status_code}"
+                passed=True,
+                message=f"name_reservation skipped: ME returned {response.status_code}",
             )
         mat_tables: list[str] = response.json()
     except Exception as exc:
-        return ValidationCheck(
-            passed=True, message=f"name_reservation skipped: {exc}"
-        )
+        return ValidationCheck(passed=True, message=f"name_reservation skipped: {exc}")
 
     base_name = name.split(".")[0]
     if base_name in mat_tables:

@@ -20,7 +20,12 @@ from cave_catalog.auth.middleware import AuthUser, require_auth
 from cave_catalog.config import Settings, get_settings
 from cave_catalog.db.models import Asset
 from cave_catalog.db.session import get_session
-from cave_catalog.schemas import AssetRequest, AssetResponse, ValidationCheck, ValidationReport
+from cave_catalog.schemas import (
+    AssetRequest,
+    AssetResponse,
+    ValidationCheck,
+    ValidationReport,
+)
 from cave_catalog.validation import run_validation_pipeline
 
 logger = structlog.get_logger()
@@ -58,7 +63,11 @@ def _asset_to_response(asset: Asset) -> AssetResponse:
 
 
 async def _find_duplicate(
-    session: AsyncSession, datastack: str, name: str, mat_version: int | None, revision: int
+    session: AsyncSession,
+    datastack: str,
+    name: str,
+    mat_version: int | None,
+    revision: int,
 ) -> Asset | None:
     if mat_version is not None:
         stmt = select(Asset).where(
@@ -87,7 +96,9 @@ async def _find_duplicate(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/register", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=AssetResponse, status_code=status.HTTP_201_CREATED
+)
 async def register_asset(
     body: AssetRequest,
     user: AuthUser = Depends(require_auth),
@@ -162,10 +173,15 @@ async def register_asset(
         )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"message": "Asset already exists", "existing_id": str(dup.id) if dup else None},
+            detail={
+                "message": "Asset already exists",
+                "existing_id": str(dup.id) if dup else None,
+            },
         )
 
-    logger.info("asset_registered", id=str(asset.id), datastack=body.datastack, name=body.name)
+    logger.info(
+        "asset_registered", id=str(asset.id), datastack=body.datastack, name=body.name
+    )
     return _asset_to_response(asset)
 
 
@@ -186,7 +202,8 @@ async def validate_asset(
     # Auth check
     if settings.auth.enabled and not user.has_permission(body.datastack, "edit"):
         report.auth_check = ValidationCheck(
-            passed=False, message=f"Write permission required on datastack '{body.datastack}'"
+            passed=False,
+            message=f"Write permission required on datastack '{body.datastack}'",
         )
         return report
     report.auth_check = ValidationCheck(passed=True)
@@ -283,14 +300,18 @@ async def get_asset(
 ) -> AssetResponse:
     asset = await session.get(Asset, asset_id)
     if asset is None or _asset_is_expired(asset):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found"
+        )
 
     if settings.auth.enabled:
         required_resource = asset.access_group or asset.datastack
         if not user.has_permission(required_resource, "view") and not user.in_group(
             required_resource
         ):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
 
     return _asset_to_response(asset)
 
@@ -309,7 +330,9 @@ async def delete_asset(
 ) -> None:
     asset = await session.get(Asset, asset_id)
     if asset is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found"
+        )
 
     if settings.auth.enabled and not user.has_permission(asset.datastack, "edit"):
         raise HTTPException(

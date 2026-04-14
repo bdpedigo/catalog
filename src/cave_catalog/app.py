@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import structlog
@@ -15,7 +15,9 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
-    logger.info("startup", service=settings.service_name, auth_enabled=settings.auth.enabled)
+    logger.info(
+        "startup", service=settings.service_name, auth_enabled=settings.auth.enabled
+    )
     yield
     await get_engine().dispose()
     logger.info("shutdown", service=settings.service_name)

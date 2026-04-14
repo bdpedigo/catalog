@@ -124,7 +124,11 @@ class AuthClient:
                 permissions=data.get("permissions_v2", data.get("permissions", {})),
                 is_admin=data.get("admin", False) or data.get("superadmin", False),
                 token=token,
-                expires_at=(datetime.fromtimestamp(data["exp"], tz=UTC) if "exp" in data else None),
+                expires_at=(
+                    datetime.fromtimestamp(data["exp"], tz=UTC)
+                    if "exp" in data
+                    else None
+                ),
             )
         except httpx.RequestError as e:
             logger.error("auth_service_unreachable", error=str(e))
@@ -168,9 +172,18 @@ def _get_url_without_token(url: str) -> str:
     params = parse_qs(parsed.query, keep_blank_values=True)
     params.pop(TOKEN_COOKIE_NAME, None)
     params.pop("token", None)
-    new_query = urlencode({k: v[0] if len(v) == 1 else v for k, v in params.items()}, doseq=True)
+    new_query = urlencode(
+        {k: v[0] if len(v) == 1 else v for k, v in params.items()}, doseq=True
+    )
     return urlunparse(
-        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment,
+        )
     )
 
 

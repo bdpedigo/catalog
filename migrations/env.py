@@ -3,15 +3,14 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
-
 from alembic import context
+from cave_catalog.config import get_settings
 
 # Import models so Alembic sees the metadata
 from cave_catalog.db.models import Base  # noqa: F401
-from cave_catalog.config import get_settings
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 config = context.config
 
