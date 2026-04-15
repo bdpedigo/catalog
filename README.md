@@ -11,18 +11,20 @@ Asset registry, discovery, and credential vending for the CAVE stack.
 
 ### Quick Start
 
+Reference the justfile to see what the specific commands are. Otherwise, install [just](https://just.systems/man/en/packages.html).
+
 ```bash
 # Clone and enter the repo
 git clone <repo-url> && cd catalog
 
 # Copy the example env file
-cp .env.example .env
+just setup
 
 # Start PostgreSQL + the catalog service
-docker compose up --build -d
+just up
 
 # Apply database migrations
-uv run alembic upgrade head
+just migrate
 
 # Verify the service is running
 open http://localhost:8000/docs
@@ -33,7 +35,7 @@ The Swagger UI at `http://localhost:8000/docs` shows all available endpoints.
 To reset the database (wipes all data):
 
 ```bash
-docker compose down -v
+just reset
 ```
 
 ## Live-Reload Development
@@ -41,30 +43,18 @@ docker compose down -v
 For faster iteration, run only PostgreSQL in Docker and the service directly on your host:
 
 ```bash
-# Start just postgres
-docker compose up postgres -d
-
-# Install dependencies (if not already done)
-uv sync --dev
-
-# Run the service with auto-reload
-DATABASE_URL=postgresql+asyncpg://cave_catalog:cave_catalog@localhost:5432/cave_catalog \
-AUTH_ENABLED=false \
-LOG_LEVEL=DEBUG \
-uv run uvicorn cave_catalog.app:create_app --factory --reload --port 8000
+just dev
 ```
 
 Code changes in `src/` will trigger an automatic restart.
 
-## Running Tests
+## Code Quality
 
 Tests use an in-memory SQLite database — no Docker or PostgreSQL needed.
 
 ```bash
-uv run pytest
+just test
 ```
-
-## Code Quality
 
 Run type checking (mypy):
 
@@ -87,13 +77,13 @@ The test fixtures in `tests/conftest.py` provide:
 Apply all pending migrations to your local database:
 
 ```bash
-uv run alembic upgrade head
+just migrate
 ```
 
 Generate a new migration after changing SQLAlchemy models:
 
 ```bash
-uv run alembic revision --autogenerate -m "describe your change"
+just new-migration msg="describe your change"
 ```
 
 Review the generated file in `migrations/versions/` before committing.

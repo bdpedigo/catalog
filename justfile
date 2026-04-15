@@ -1,3 +1,7 @@
+# Copy example env file to .env (one-time setup)
+setup:
+    cp .env.example .env
+
 # Start PostgreSQL + catalog service (docker compose)
 up:
     docker compose up --build -d
@@ -5,6 +9,10 @@ up:
 # Stop all containers
 down:
     docker compose down
+
+# Stop all containers and wipe volumes (resets the database)
+reset:
+    docker compose down -v
 
 # Apply database migrations
 migrate:
@@ -32,3 +40,7 @@ dev:
 # Tail logs from the catalog service container
 logs:
     docker compose logs -f catalog-service
+
+# Generate a new migration after changing SQLAlchemy models
+new-migration msg:
+    uv run alembic revision --autogenerate -m "{{msg}}"
