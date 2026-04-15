@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 
 import structlog
+from cloudpathlib import AnyPath
 from httpx import AsyncClient
 
 from cave_catalog.config import get_settings
@@ -56,49 +57,19 @@ FORMAT_SNIFFERS: dict[str, object] = {
 }
 
 
-# --- URI helpers ------------------------------------------------------------
-
-
-def _uri_to_http_url(uri: str) -> str | None:
-    """Convert gs:// or s3:// URI to an HTTPS URL suitable for a HEAD check.
-
-    Returns None if the scheme is not recognised.
-    """
-    if uri.startswith("gs://"):
-        # gs://bucket/path  →  https://storage.googleapis.com/bucket/path
-        rest = uri[5:]
-        return f"https://storage.googleapis.com/{rest}"
-    if uri.startswith("s3://"):
-        # s3://bucket/path  →  https://bucket.s3.amazonaws.com/path
-        parts = uri[5:].split("/", 1)
-        bucket = parts[0]
-        key = parts[1] if len(parts) > 1 else ""
-        return f"https://{bucket}.s3.amazonaws.com/{key}"
-    if uri.startswith("http://") or uri.startswith("https://"):
-        return uri
-    return None
-
-
 # --- Individual checks ------------------------------------------------------
 
 
-async def check_uri_reachable(uri: str, client: AsyncClient) -> ValidationCheck:
-    """Issue a HEAD request to verify the URI (or its HTTP equivalent) is reachable."""
+async def check_uri_reachable(uri: str) -> ValidationCheck:
+    """Verify the URI exists using cloudpathlib (supports gs://, s3://, and local paths)."""
     logger.debug("check_uri_reachable", uri=uri)
-    url = _uri_to_http_url(uri)
-    if url is None:
-        return ValidationCheck(passed=False, message=f"Unrecognised URI scheme: {uri}")
     try:
-        response = await client.head(url, follow_redirects=True, timeout=10.0)
-        logger.debug(
-            "check_uri_reachable_result", uri=uri, status_code=response.status_code
-        )
-        if response.status_code < 400:
+        path = AnyPath(uri)
+        exists = await asyncio.to_thread(path.exists)
+        logger.debug("check_uri_reachable_result", uri=uri, exists=exists)
+        if exists:
             return ValidationCheck(passed=True)
-        return ValidationCheck(
-            passed=False,
-            message=f"URI returned HTTP {response.status_code}",
-        )
+        return ValidationCheck(passed=False, message=f"URI does not exist: {uri}")
     except Exception as exc:
         logger.debug("check_uri_reachable_error", uri=uri, error=str(exc))
         return ValidationCheck(passed=False, message=f"URI unreachable: {exc}")
@@ -271,7 +242,7 @@ async def run_validation_pipeline(
     )
 
     # URI reachability
-    report.uri_reachable = await check_uri_reachable(uri, client)
+    report.uri_reachable = await check_uri_reachable(uri)
 
     # Format sniff
     report.format_sniff = await check_format_sniff(uri, fmt)

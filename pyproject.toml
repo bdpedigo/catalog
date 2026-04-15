@@ -2,6 +2,7 @@
 dependencies = [
     "alembic>=1.13",
     "asyncpg>=0.29",
+    "cloudpathlib[gs,s3]>=0.23.0",
     "deltalake>=0.17",
     "fastapi>=0.115.0",
     "httpx>=0.27",
