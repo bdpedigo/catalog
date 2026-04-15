@@ -26,14 +26,18 @@ test:
 typecheck:
     uv run mypy src/
 
+# Format and lint the code (ruff)
+lint:
+    uv run ruff format src/ tests/
+    uv run ruff check src/ tests/ --fix
+
 # Run all checks (tests + type-checking)
-checks: test typecheck
+checks: lint typecheck test 
 
 # Live-reload dev: postgres in Docker, uvicorn on host
 dev:
     docker compose up postgres -d
     DATABASE_URL=postgresql+asyncpg://cave_catalog:cave_catalog@localhost:5432/cave_catalog \
-    AUTH_ENABLED=false \
     LOG_LEVEL=DEBUG \
     uv run uvicorn cave_catalog.app:create_app --factory --reload --port 8000
 

@@ -35,8 +35,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
-    settings = get_settings()
-
     app = FastAPI(
         title="CAVE Catalog",
         description="Asset registry, discovery, and credential vending for the CAVE stack.",
