@@ -105,6 +105,13 @@ async def register_asset(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> AssetResponse:
+    logger.debug(
+        "register_asset",
+        datastack=body.datastack,
+        name=body.name,
+        uri=body.uri,
+        fmt=body.format,
+    )
     # Auth check: user must have write permission on the datastack
     if settings.auth.enabled and not user.has_permission(body.datastack, "edit"):
         raise HTTPException(
@@ -130,6 +137,7 @@ async def register_asset(
         fmt=body.format,
         properties=body.properties,
         client=_get_http_client(),
+        token=user.token,
     )
 
     failures = {
@@ -197,6 +205,13 @@ async def validate_asset(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> ValidationReport:
+    logger.debug(
+        "validate_asset",
+        datastack=body.datastack,
+        name=body.name,
+        uri=body.uri,
+        fmt=body.format,
+    )
     report = ValidationReport()
 
     # Auth check
@@ -225,6 +240,7 @@ async def validate_asset(
         fmt=body.format,
         properties=body.properties,
         client=_get_http_client(),
+        token=user.token,
     )
     report.name_reservation_check = content_report.name_reservation_check
     report.uri_reachable = content_report.uri_reachable
@@ -253,6 +269,7 @@ async def list_assets(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> list[AssetResponse]:
+    logger.debug("list_assets", datastack=datastack, name=name, mat_version=mat_version)
     if settings.auth.enabled and not user.has_permission(datastack, "view"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -298,6 +315,7 @@ async def get_asset(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> AssetResponse:
+    logger.debug("get_asset", asset_id=str(asset_id))
     asset = await session.get(Asset, asset_id)
     if asset is None or _asset_is_expired(asset):
         raise HTTPException(
@@ -328,6 +346,7 @@ async def delete_asset(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> None:
+    logger.debug("delete_asset", asset_id=str(asset_id))
     asset = await session.get(Asset, asset_id)
     if asset is None:
         raise HTTPException(

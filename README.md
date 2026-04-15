@@ -30,6 +30,12 @@ open http://localhost:8000/docs
 
 The Swagger UI at `http://localhost:8000/docs` shows all available endpoints.
 
+To reset the database (wipes all data):
+
+```bash
+docker compose down -v
+```
+
 ## Live-Reload Development
 
 For faster iteration, run only PostgreSQL in Docker and the service directly on your host:
@@ -44,6 +50,7 @@ uv sync --dev
 # Run the service with auto-reload
 DATABASE_URL=postgresql+asyncpg://cave_catalog:cave_catalog@localhost:5432/cave_catalog \
 AUTH_ENABLED=false \
+LOG_LEVEL=DEBUG \
 uv run uvicorn cave_catalog.app:create_app --factory --reload --port 8000
 ```
 

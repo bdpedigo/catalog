@@ -19,6 +19,7 @@ dev:
     docker compose up postgres -d
     DATABASE_URL=postgresql+asyncpg://cave_catalog:cave_catalog@localhost:5432/cave_catalog \
     AUTH_ENABLED=false \
+    LOG_LEVEL=DEBUG \
     uv run uvicorn cave_catalog.app:create_app --factory --reload --port 8000
 
 # Tail logs from the catalog service container

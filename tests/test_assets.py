@@ -23,7 +23,7 @@ def _asset_payload(**overrides: Any) -> dict:
         "datastack": "minnie65_public",
         "name": "synapses",
         "mat_version": 943,
-        "revision": 1,
+        "revision": 0,
         "uri": "gs://bucket/minnie65/synapses/",
         "format": "delta",
         "asset_type": "table",

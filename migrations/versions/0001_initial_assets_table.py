@@ -24,7 +24,7 @@ def upgrade() -> None:
         sa.Column("datastack", sa.String(), nullable=False),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("mat_version", sa.Integer(), nullable=True),
-        sa.Column("revision", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column("revision", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("uri", sa.String(), nullable=False),
         sa.Column("format", sa.String(), nullable=False),
         sa.Column("asset_type", sa.String(), nullable=False),

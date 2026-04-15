@@ -206,6 +206,7 @@ async def get_current_user(
     settings: Settings = Depends(get_settings),
 ) -> AuthUser | None:
     if not settings.auth.enabled:
+        logger.debug("auth_disabled_anonymous_user")
         return AuthUser(
             user_id="anonymous",
             email="anonymous@disabled",
@@ -215,9 +216,29 @@ async def get_current_user(
         )
     extracted = _extract_token(request, credentials)
     if extracted.token is None:
+        logger.debug("no_token_found", path=request.url.path)
         return None
+    logger.debug(
+        "token_found",
+        source="query_param" if extracted.from_query_param else "header_or_cookie",
+        path=request.url.path,
+    )
     auth_client = get_auth_client(settings)
-    return await auth_client.validate_token(extracted.token)
+    try:
+        user = await auth_client.validate_token(extracted.token)
+    except AuthServiceError as e:
+        logger.error("auth_service_error", error=str(e), status_code=e.status_code)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service unavailable",
+        ) from e
+    logger.debug(
+        "token_validated",
+        user_id=user.user_id,
+        email=user.email,
+        is_admin=user.is_admin,
+    )
+    return user
 
 
 async def require_auth(

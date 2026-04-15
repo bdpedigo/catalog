@@ -21,7 +21,7 @@ class AssetRequest(BaseModel):
     datastack: str
     name: str
     mat_version: int | None = None
-    revision: int = Field(default=1, ge=1)
+    revision: int = Field(default=0, ge=0)
     uri: str
     format: str
     asset_type: str

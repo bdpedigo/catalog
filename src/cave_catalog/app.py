@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -15,8 +16,18 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
+    logging.basicConfig(level=settings.log_level.upper())
     logger.info(
         "startup", service=settings.service_name, auth_enabled=settings.auth.enabled
+    )
+    logger.debug(
+        "config",
+        database_url=settings.database_url.rsplit("@", 1)[-1],  # hide credentials
+        service_name=settings.service_name,
+        log_level=settings.log_level,
+        mat_engine_url=settings.mat_engine_url,
+        auth_enabled=settings.auth.enabled,
+        auth_service_url=settings.auth.service_url,
     )
     yield
     await get_engine().dispose()

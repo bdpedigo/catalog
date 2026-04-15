@@ -56,11 +56,15 @@ def _uri_to_http_url(uri: str) -> str | None:
 
 async def check_uri_reachable(uri: str, client: AsyncClient) -> ValidationCheck:
     """Issue a HEAD request to verify the URI (or its HTTP equivalent) is reachable."""
+    logger.debug("check_uri_reachable", uri=uri)
     url = _uri_to_http_url(uri)
     if url is None:
         return ValidationCheck(passed=False, message=f"Unrecognised URI scheme: {uri}")
     try:
         response = await client.head(url, follow_redirects=True, timeout=10.0)
+        logger.debug(
+            "check_uri_reachable_result", uri=uri, status_code=response.status_code
+        )
         if response.status_code < 400:
             return ValidationCheck(passed=True)
         return ValidationCheck(
@@ -68,6 +72,7 @@ async def check_uri_reachable(uri: str, client: AsyncClient) -> ValidationCheck:
             message=f"URI returned HTTP {response.status_code}",
         )
     except Exception as exc:
+        logger.debug("check_uri_reachable_error", uri=uri, error=str(exc))
         return ValidationCheck(passed=False, message=f"URI unreachable: {exc}")
 
 
@@ -75,6 +80,7 @@ async def check_format_sniff(
     uri: str, fmt: str, client: AsyncClient
 ) -> ValidationCheck:
     """Verify that the URI prefix contains format-specific marker files."""
+    logger.debug("check_format_sniff", uri=uri, fmt=fmt)
     signatures = FORMAT_SIGNATURES.get(fmt.lower())
     if signatures is None:
         # Unknown format — skip sniff, pass through
@@ -96,6 +102,7 @@ async def check_format_sniff(
         except Exception:
             pass
 
+    logger.debug("check_format_sniff_failed", uri=uri, fmt=fmt)
     return ValidationCheck(
         passed=False,
         message=f"Format sniff failed: no {fmt!r} markers found at {uri}",
@@ -107,8 +114,15 @@ async def check_mat_table(
     source_table: str,
     mat_version: int,
     client: AsyncClient,
+    token: str = "",
 ) -> ValidationCheck:
     """Verify a materialization table + version exist via the MaterializationEngine API."""
+    logger.debug(
+        "check_mat_table",
+        datastack=datastack,
+        source_table=source_table,
+        mat_version=mat_version,
+    )
     settings = get_settings()
     if not settings.mat_engine_url:
         logger.warning(
@@ -120,19 +134,31 @@ async def check_mat_table(
         )
 
     base = settings.mat_engine_url.rstrip("/")
-    url = f"{base}/api/v2/datastack/{datastack}/version/{mat_version}/table/{source_table}"
+    url = f"{base}/api/v2/datastack/{datastack}/version/{mat_version}/tables"
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
-        response = await client.get(url, timeout=15.0)
-        if response.status_code == 200:
-            return ValidationCheck(passed=True)
+        response = await client.get(url, headers=headers, timeout=15.0)
         if response.status_code == 404:
             return ValidationCheck(
                 passed=False,
-                message=f"Mat table '{source_table}' at version {mat_version} not found in MaterializationEngine",
+                message=f"Version {mat_version} not found for datastack '{datastack}' in MaterializationEngine",
             )
+        if response.status_code in (301, 302, 303, 307, 308, 401, 403):
+            return ValidationCheck(
+                passed=False,
+                message=f"MaterializationEngine authentication failed (HTTP {response.status_code}): service token may be missing or invalid",
+            )
+        if response.status_code != 200:
+            return ValidationCheck(
+                passed=False,
+                message=f"MaterializationEngine returned HTTP {response.status_code}",
+            )
+        mat_tables: list[str] = response.json()
+        if source_table in mat_tables:
+            return ValidationCheck(passed=True)
         return ValidationCheck(
             passed=False,
-            message=f"MaterializationEngine returned HTTP {response.status_code}",
+            message=f"Mat table '{source_table}' at version {mat_version} not found in MaterializationEngine",
         )
     except Exception as exc:
         return ValidationCheck(
@@ -146,12 +172,19 @@ async def check_name_reservation(
     name: str,
     is_mat_source: bool,
     client: AsyncClient,
+    token: str = "",
 ) -> ValidationCheck:
     """Check whether `name` is reserved because it matches a mat table for `datastack`.
 
     Layout variants (`name.suffix` where `name` matches a mat table) are also reserved.
     Passes through if MAT_ENGINE_URL is not configured.
     """
+    logger.debug(
+        "check_name_reservation",
+        datastack=datastack,
+        name=name,
+        is_mat_source=is_mat_source,
+    )
     settings = get_settings()
     if not settings.mat_engine_url:
         return ValidationCheck(
@@ -161,8 +194,15 @@ async def check_name_reservation(
 
     base = settings.mat_engine_url.rstrip("/")
     url = f"{base}/api/v2/datastack/{datastack}/tables"
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
-        response = await client.get(url, timeout=15.0)
+        response = await client.get(url, headers=headers, timeout=15.0)
+        if response.status_code in (301, 302, 303, 307, 308, 401, 403):
+            # Auth redirect/rejection — skip rather than block registration
+            return ValidationCheck(
+                passed=True,
+                message=f"name_reservation skipped: ME authentication failed (HTTP {response.status_code})",
+            )
         if response.status_code != 200:
             # Can't reach ME — skip the check rather than block registration
             return ValidationCheck(
@@ -199,6 +239,7 @@ async def run_validation_pipeline(
     properties: dict,
     existing_id=None,
     client: AsyncClient,
+    token: str = "",
 ) -> ValidationReport:
     """Run all content-level validation checks and return a report.
 
@@ -206,13 +247,16 @@ async def run_validation_pipeline(
     covers URI reachability, format sniff, name reservation, and
     source-conditional mat verification.
     """
+    logger.debug(
+        "run_validation_pipeline", datastack=datastack, name=name, uri=uri, fmt=fmt
+    )
     report = ValidationReport()
 
     is_mat_source = properties.get("source") == "materialization"
 
     # Name reservation check
     report.name_reservation_check = await check_name_reservation(
-        datastack, name, is_mat_source, client
+        datastack, name, is_mat_source, client, token
     )
 
     # URI reachability
@@ -227,7 +271,7 @@ async def run_validation_pipeline(
         mat_ver = properties.get("mat_version")
         if source_table and mat_ver is not None:
             report.mat_table_verify = await check_mat_table(
-                datastack, str(source_table), int(mat_ver), client
+                datastack, str(source_table), int(mat_ver), client, token
             )
         else:
             report.mat_table_verify = ValidationCheck(

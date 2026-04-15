@@ -21,7 +21,7 @@ class Asset(Base):
     datastack: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     mat_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     uri: Mapped[str] = mapped_column(String, nullable=False)
     format: Mapped[str] = mapped_column(String, nullable=False)
     asset_type: Mapped[str] = mapped_column(String, nullable=False)

@@ -8,7 +8,12 @@ class AuthSettings(BaseSettings):
     enabled: bool = Field(default=False, alias="AUTH_ENABLED")
     service_url: str = Field(default="http://localhost:7777", alias="AUTH_SERVICE_URL")
 
-    model_config = SettingsConfigDict(populate_by_name=True)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        populate_by_name=True,
+        extra="ignore",
+    )
 
 
 class Settings(BaseSettings):
@@ -18,6 +23,7 @@ class Settings(BaseSettings):
     )
     service_name: str = Field(default="cave-catalog", alias="SERVICE_NAME")
     mat_engine_url: str | None = Field(default=None, alias="MAT_ENGINE_URL")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     auth: AuthSettings = Field(default_factory=AuthSettings)
 
     model_config = SettingsConfigDict(
