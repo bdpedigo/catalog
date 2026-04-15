@@ -62,6 +62,12 @@ Run type checking (mypy):
 just typecheck
 ```
 
+Run linting and formatting:
+
+```bash
+just lint
+```
+
 Run all checks (tests + type checking):
 
 ```bash

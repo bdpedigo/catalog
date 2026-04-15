@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: just-lint
+        name: lint (ruff format + check)
+        language: system
+        entry: just lint
+        pass_filenames: false
+        types: [python]

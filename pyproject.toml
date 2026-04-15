@@ -24,6 +24,7 @@ dev = [
     "aiosqlite>=0.20",
     "anyio>=4.3",
     "mypy>=1.20.0",
+    "pre-commit>=3.7",
     "pytest-asyncio>=0.23",
     "pytest-httpx>=0.30",
     "pytest>=8.0",
