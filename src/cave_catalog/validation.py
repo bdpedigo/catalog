@@ -7,6 +7,8 @@ POST /validate so all checks stay in one place.
 
 from __future__ import annotations
 
+import asyncio
+
 import structlog
 from httpx import AsyncClient
 
@@ -15,16 +17,42 @@ from cave_catalog.schemas import ValidationCheck, ValidationReport
 
 logger = structlog.get_logger()
 
-# --- Format sniff signatures ------------------------------------------------
+# --- Format sniffers --------------------------------------------------------
 
-# Maps a declared `format` value to a list of URI-suffix probes that indicate
-# a positive match.  The check reads the *bucket prefix* listing via HEAD
-# requests against these known sub-paths.
-FORMAT_SIGNATURES: dict[str, list[str]] = {
-    "delta": ["_delta_log/"],
-    "iceberg": ["metadata/"],
-    "lance": [".lance/"],
-    "neuroglancer_precomputed": ["info"],
+
+async def _sniff_parquet(uri: str) -> ValidationCheck:
+    """Validate parquet format by reading schema metadata via polars."""
+    import polars as pl
+
+    try:
+        await asyncio.to_thread(lambda: pl.scan_parquet(uri).collect_schema())
+        return ValidationCheck(passed=True)
+    except Exception as exc:
+        return ValidationCheck(
+            passed=False,
+            message=f"Parquet sniff failed: {exc}",
+        )
+
+
+async def _sniff_delta(uri: str) -> ValidationCheck:
+    """Validate Delta Lake format by reading the transaction log via deltalake."""
+    from deltalake import DeltaTable
+
+    try:
+        await asyncio.to_thread(lambda: DeltaTable(uri).schema())
+        return ValidationCheck(passed=True)
+    except Exception as exc:
+        return ValidationCheck(
+            passed=False,
+            message=f"Delta sniff failed: {exc}",
+        )
+
+
+# Maps format name to an async callable (uri -> ValidationCheck) that validates
+# via a third-party library.
+FORMAT_SNIFFERS: dict[str, object] = {
+    "parquet": _sniff_parquet,
+    "delta": _sniff_delta,
 }
 
 
@@ -76,37 +104,20 @@ async def check_uri_reachable(uri: str, client: AsyncClient) -> ValidationCheck:
         return ValidationCheck(passed=False, message=f"URI unreachable: {exc}")
 
 
-async def check_format_sniff(
-    uri: str, fmt: str, client: AsyncClient
-) -> ValidationCheck:
-    """Verify that the URI prefix contains format-specific marker files."""
+async def check_format_sniff(uri: str, fmt: str) -> ValidationCheck:
+    """Validate the format at *uri* using a library-based sniffer.
+
+    Returns a passing check with a message if no sniffer is registered for *fmt*.
+    """
     logger.debug("check_format_sniff", uri=uri, fmt=fmt)
-    signatures = FORMAT_SIGNATURES.get(fmt.lower())
-    if signatures is None:
-        # Unknown format — skip sniff, pass through
+
+    sniffer = FORMAT_SNIFFERS.get(fmt.lower())
+    if sniffer is None:
         return ValidationCheck(
-            passed=True, message=f"No sniff signatures for format '{fmt}'"
+            passed=True, message=f"No sniffer registered for format '{fmt}'"
         )
 
-    base = uri.rstrip("/") + "/"
-    for sig in signatures:
-        url = _uri_to_http_url(base + sig)
-        if url is None:
-            return ValidationCheck(
-                passed=False, message=f"Unrecognised URI scheme for sniff: {uri}"
-            )
-        try:
-            response = await client.head(url, follow_redirects=True, timeout=10.0)
-            if response.status_code < 400:
-                return ValidationCheck(passed=True)
-        except Exception:
-            pass
-
-    logger.debug("check_format_sniff_failed", uri=uri, fmt=fmt)
-    return ValidationCheck(
-        passed=False,
-        message=f"Format sniff failed: no {fmt!r} markers found at {uri}",
-    )
+    return await sniffer(uri)
 
 
 async def check_mat_table(
@@ -263,7 +274,7 @@ async def run_validation_pipeline(
     report.uri_reachable = await check_uri_reachable(uri, client)
 
     # Format sniff
-    report.format_sniff = await check_format_sniff(uri, fmt, client)
+    report.format_sniff = await check_format_sniff(uri, fmt)
 
     # Source-conditional mat table verification
     if is_mat_source:

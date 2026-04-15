@@ -160,7 +160,7 @@ async def register_asset(
         uri=body.uri,
         format=body.format,
         asset_type=body.asset_type,
-        owner=user.email or user.user_id,
+        owner=user.user_id,
         is_managed=body.is_managed,
         mutability=body.mutability.value,
         maturity=body.maturity.value,
