@@ -25,7 +25,7 @@ class Asset(Base):
     uri: Mapped[str] = mapped_column(String, nullable=False)
     format: Mapped[str] = mapped_column(String, nullable=False)
     asset_type: Mapped[str] = mapped_column(String, nullable=False)
-    owner: Mapped[str] = mapped_column(String, nullable=False)
+    owner: Mapped[int] = mapped_column(Integer, nullable=False)
     is_managed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     mutability: Mapped[str] = mapped_column(String, nullable=False, default="static")
     maturity: Mapped[str] = mapped_column(String, nullable=False, default="stable")

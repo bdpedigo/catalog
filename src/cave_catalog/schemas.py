@@ -42,7 +42,7 @@ class AssetResponse(BaseModel):
     uri: str
     format: str
     asset_type: str
-    owner: str
+    owner: int
     is_managed: bool
     mutability: Mutability
     maturity: Maturity

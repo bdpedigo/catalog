@@ -8,9 +8,12 @@ POST /validate so all checks stay in one place.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Coroutine
+from pathlib import Path
+from typing import Any
 
 import structlog
-from cloudpathlib import AnyPath
+from cloudpathlib import AnyPath, CloudPath
 from httpx import AsyncClient
 
 from cave_catalog.config import get_settings
@@ -51,7 +54,8 @@ async def _sniff_delta(uri: str) -> ValidationCheck:
 
 # Maps format name to an async callable (uri -> ValidationCheck) that validates
 # via a third-party library.
-FORMAT_SNIFFERS: dict[str, object] = {
+_Sniffer = Callable[[str], Coroutine[Any, Any, ValidationCheck]]
+FORMAT_SNIFFERS: dict[str, _Sniffer] = {
     "parquet": _sniff_parquet,
     "delta": _sniff_delta,
 }
@@ -64,7 +68,7 @@ async def check_uri_reachable(uri: str) -> ValidationCheck:
     """Verify the URI exists using cloudpathlib (supports gs://, s3://, and local paths)."""
     logger.debug("check_uri_reachable", uri=uri)
     try:
-        path = AnyPath(uri)
+        path: CloudPath | Path = AnyPath(uri)  # type: ignore[assignment]
         exists = await asyncio.to_thread(path.exists)
         logger.debug("check_uri_reachable_result", uri=uri, exists=exists)
         if exists:
@@ -219,7 +223,7 @@ async def run_validation_pipeline(
     uri: str,
     fmt: str,
     properties: dict,
-    existing_id=None,
+    existing_id: Any = None,
     client: AsyncClient,
     token: str = "",
 ) -> ValidationReport:

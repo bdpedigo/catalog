@@ -14,6 +14,13 @@ migrate:
 test:
     uv run pytest
 
+# Type-check the source (mypy)
+typecheck:
+    uv run mypy src/
+
+# Run all checks (tests + type-checking)
+checks: test typecheck
+
 # Live-reload dev: postgres in Docker, uvicorn on host
 dev:
     docker compose up postgres -d

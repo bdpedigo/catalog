@@ -64,6 +64,20 @@ Tests use an in-memory SQLite database — no Docker or PostgreSQL needed.
 uv run pytest
 ```
 
+## Code Quality
+
+Run type checking (mypy):
+
+```bash
+just typecheck
+```
+
+Run all checks (tests + type checking):
+
+```bash
+just checks
+```
+
 The test fixtures in `tests/conftest.py` provide:
 - **`_env`** (autouse): sets `AUTH_ENABLED=false` and `DATABASE_URL` to SQLite, clears config caches between tests
 - **`client`**: an async `httpx.AsyncClient` wired to the app with a per-test SQLite DB, tables auto-created

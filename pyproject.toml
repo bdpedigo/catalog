@@ -23,6 +23,7 @@ version = "0.1.0"
 dev = [
     "aiosqlite>=0.20",
     "anyio>=4.3",
+    "mypy>=1.20.0",
     "pytest-asyncio>=0.23",
     "pytest-httpx>=0.30",
     "pytest>=8.0",
@@ -39,3 +40,8 @@ packages = ["src/cave_catalog"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.mypy]
+disallow_untyped_defs = true
+ignore_missing_imports = true
+packages = ["cave_catalog"]

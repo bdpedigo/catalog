@@ -43,7 +43,7 @@ TOKEN_COOKIE_NAME = "middle_auth_token"
 
 @dataclass
 class AuthUser:
-    user_id: str
+    user_id: int
     email: str
     name: str = ""
     groups: list[str] = field(default_factory=list)
@@ -117,7 +117,7 @@ class AuthClient:
                 )
             data = response.json()
             return AuthUser(
-                user_id=str(data.get("id", data.get("sub", ""))),
+                user_id=int(data.get("id", data.get("sub", 0))),
                 email=data.get("email", ""),
                 name=data.get("name", ""),
                 groups=data.get("groups", []),
@@ -208,7 +208,7 @@ async def get_current_user(
     if not settings.auth.enabled:
         logger.debug("auth_disabled_anonymous_user")
         return AuthUser(
-            user_id="anonymous",
+            user_id=0,
             email="anonymous@disabled",
             name="Anonymous (auth disabled)",
             groups=["public"],

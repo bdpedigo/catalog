@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column("uri", sa.String(), nullable=False),
         sa.Column("format", sa.String(), nullable=False),
         sa.Column("asset_type", sa.String(), nullable=False),
-        sa.Column("owner", sa.String(), nullable=False),
+        sa.Column("owner", sa.Integer(), nullable=False),
         sa.Column("is_managed", sa.Boolean(), nullable=False),
         sa.Column("mutability", sa.String(), nullable=False, server_default="static"),
         sa.Column("maturity", sa.String(), nullable=False, server_default="stable"),
