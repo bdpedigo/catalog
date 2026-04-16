@@ -21,6 +21,7 @@ from cave_catalog.config import Settings, get_settings
 from cave_catalog.db.models import Asset
 from cave_catalog.db.session import get_session
 from cave_catalog.schemas import (
+    AccessResponse,
     AssetRequest,
     AssetResponse,
     ValidationCheck,
@@ -362,3 +363,56 @@ async def delete_asset(
     await session.delete(asset)
     await session.commit()
     logger.info("asset_deleted", id=str(asset_id), user=user.user_id)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/assets/{id}/access
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{asset_id}/access", response_model=AccessResponse)
+async def get_asset_access(
+    asset_id: uuid.UUID,
+    user: AuthUser = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> AccessResponse:
+    logger.debug("get_asset_access", asset_id=str(asset_id))
+
+    asset = await session.get(Asset, asset_id)
+    if asset is None or _asset_is_expired(asset):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found"
+        )
+
+    # Permission gating: access_group takes priority over datastack permission
+    if settings.auth.enabled:
+        if asset.access_group is not None:
+            if not user.in_group(asset.access_group):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+                )
+        elif not user.has_permission(asset.datastack, "view"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
+
+    # Unmanaged assets: passthrough (no credentials)
+    if not asset.is_managed:
+        return AccessResponse(
+            uri=asset.uri,
+            format=asset.format,
+            token=None,
+            token_type=None,
+            expires_in=None,
+            storage_provider=None,
+            is_managed=False,
+        )
+
+    # Managed assets: dispatch to provider
+    from cave_catalog.credentials.dispatch import get_provider
+
+    provider = get_provider(asset.uri)
+    response = await provider.vend(asset.uri)
+    # Fill in the format from the asset record (provider doesn't know it)
+    return response.model_copy(update={"format": asset.format})

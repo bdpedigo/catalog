@@ -54,6 +54,16 @@ class AssetResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AccessResponse(BaseModel):
+    uri: str
+    format: str
+    token: str | None = None
+    token_type: str | None = None
+    expires_in: int | None = None
+    storage_provider: str | None = None
+    is_managed: bool = True
+
+
 class ValidationCheck(BaseModel):
     passed: bool
     message: str | None = None
