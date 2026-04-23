@@ -58,6 +58,7 @@ No project-level roles are required.
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
@@ -71,15 +72,31 @@ from cave_catalog.schemas import AccessResponse
 _EXPIRY_SECONDS = 3600
 
 
+# GCS bucket names: lowercase letters, digits, hyphens, underscores, dots.
+_BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$")
+# Prefix: alphanumeric, slashes, hyphens, underscores, dots, equals, plus.
+_PREFIX_RE = re.compile(r"^[a-zA-Z0-9/_\-.=+]*$")
+
+
 def _parse_gcs_uri(uri: str) -> tuple[str, str]:
     """Parse a ``gs://bucket/prefix`` URI into ``(bucket, prefix)``.
 
     The prefix is returned without a leading slash but with a trailing slash
     preserved if present.
+
+    Raises :class:`ValueError` for malformed or potentially unsafe URIs.
     """
     parsed = urlparse(uri)
+    if parsed.scheme != "gs" or not parsed.netloc:
+        raise ValueError(
+            f"Invalid GCS URI {uri!r}: expected format gs://bucket[/prefix]"
+        )
     bucket = parsed.netloc
+    if not _BUCKET_RE.match(bucket):
+        raise ValueError(f"Invalid GCS bucket name: {bucket!r}")
     prefix = parsed.path.lstrip("/")
+    if prefix and not _PREFIX_RE.match(prefix):
+        raise ValueError(f"Invalid GCS prefix: {prefix!r}")
     return bucket, prefix
 
 
@@ -113,13 +130,14 @@ def _refresh_credentials(
     credentials.refresh(request)
     token: str = credentials.token
     if credentials.expiry is not None:
+        expiry = credentials.expiry
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=UTC)
+        else:
+            expiry = expiry.astimezone(UTC)
         expires_in = max(
             0,
-            int(
-                (
-                    credentials.expiry.replace(tzinfo=UTC) - datetime.now(UTC)
-                ).total_seconds()
-            ),
+            int((expiry - datetime.now(UTC)).total_seconds()),
         )
     else:
         expires_in = _EXPIRY_SECONDS
@@ -130,7 +148,15 @@ class GCSCredentialProvider(CredentialProvider):
     """Credential provider that vends downscoped GCS OAuth tokens."""
 
     async def vend(self, uri: str) -> AccessResponse:
-        bucket, prefix = _parse_gcs_uri(uri)
+        from fastapi import HTTPException, status
+
+        try:
+            bucket, prefix = _parse_gcs_uri(uri)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
 
         source_credentials, _ = await asyncio.to_thread(
             google.auth.default,

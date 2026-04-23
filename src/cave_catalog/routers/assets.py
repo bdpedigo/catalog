@@ -385,14 +385,12 @@ async def get_asset_access(
             status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found"
         )
 
-    # Permission gating: access_group takes priority over datastack permission
+    # Permission gating: consistent with get_asset
     if settings.auth.enabled:
-        if asset.access_group is not None:
-            if not user.in_group(asset.access_group):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
-                )
-        elif not user.has_permission(asset.datastack, "view"):
+        required_resource = asset.access_group or asset.datastack
+        if not user.has_permission(required_resource, "view") and not user.in_group(
+            required_resource
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
             )

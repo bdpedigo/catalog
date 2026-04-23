@@ -16,20 +16,6 @@ class AuthSettings(BaseSettings):
     )
 
 
-class GCSSettings(BaseSettings):
-    project: str | None = Field(default=None, alias="GCS_PROJECT")
-    service_account_email: str | None = Field(
-        default=None, alias="GCS_SERVICE_ACCOUNT_EMAIL"
-    )
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        populate_by_name=True,
-        extra="ignore",
-    )
-
-
 class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+asyncpg://cave_catalog:cave_catalog@localhost:5432/cave_catalog",
@@ -39,7 +25,6 @@ class Settings(BaseSettings):
     mat_engine_url: str | None = Field(default=None, alias="MAT_ENGINE_URL")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     auth: AuthSettings = Field(default_factory=AuthSettings)
-    gcs: GCSSettings = Field(default_factory=GCSSettings)
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -6,6 +6,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers shared across tests
 # ---------------------------------------------------------------------------
@@ -75,15 +77,49 @@ def test_parse_gcs_uri_no_prefix():
     assert prefix == ""
 
 
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "gs:///path",  # empty bucket
+        "s3://mybucket/path/",  # wrong scheme
+        "mybucket/path/",  # no scheme
+        "gs://INVALID_UPPER/path/",  # uppercase bucket
+        "gs://a/path/",  # bucket too short
+    ],
+)
+def test_parse_gcs_uri_rejects_invalid(uri):
+    from cave_catalog.credentials.gcs import _parse_gcs_uri
+
+    with pytest.raises(ValueError):
+        _parse_gcs_uri(uri)
+
+
+def test_parse_gcs_uri_rejects_unsafe_prefix():
+    from cave_catalog.credentials.gcs import _parse_gcs_uri
+
+    with pytest.raises(ValueError, match="Invalid GCS prefix"):
+        _parse_gcs_uri("gs://mybucket/path' OR true/")
+
+
 def test_build_downscoped_credentials_sets_bucket_and_prefix():
     from cave_catalog.credentials.gcs import _build_downscoped_credentials
     from google.auth import downscoped
 
     source = MagicMock()
-    creds = _build_downscoped_credentials(source, "mybucket", "myprefix/")
+    constructed_creds = MagicMock()
 
-    assert isinstance(creds, downscoped.Credentials)
-    rule = creds._credential_access_boundary.rules[0]
+    with patch(
+        "cave_catalog.credentials.gcs.downscoped.Credentials",
+        return_value=constructed_creds,
+    ) as mock_credentials:
+        creds = _build_downscoped_credentials(source, "mybucket", "myprefix/")
+
+    assert creds is constructed_creds
+    mock_credentials.assert_called_once()
+    assert mock_credentials.call_args.kwargs["source_credentials"] is source
+
+    boundary = mock_credentials.call_args.kwargs["credential_access_boundary"]
+    rule = boundary.rules[0]
     assert "mybucket" in rule.available_resource
     assert "inRole:roles/storage.objectViewer" in rule.available_permissions
     assert "myprefix/" in rule.availability_condition.expression
@@ -276,16 +312,12 @@ async def test_access_auth_enabled_no_permission_returns_403(
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app2), base_url="http://test"
     ) as c2:
-        # Re-register the asset in the new DB (auth disabled on first client)
-        _patch_validation(monkeypatch)
-        reg = await c2.post(
-            "/api/v1/assets/register", json=_asset_payload(is_managed=False)
-        )
-        # Override auth to an admin user just for registration
+        # Override auth to an admin user just for registration in the new DB
         admin_user = AuthUser(
             user_id=1, email="a@b.com", is_admin=True, groups=[], permissions={}
         )
         app2.dependency_overrides[require_auth] = lambda: admin_user
+        _patch_validation(monkeypatch)
         reg = await c2.post(
             "/api/v1/assets/register",
             json=_asset_payload(is_managed=False, name="auth-test-asset"),
