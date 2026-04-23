@@ -7,7 +7,6 @@ Credential vending (3.3) and view resolution (4.2) are added in later tasks.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -20,6 +19,12 @@ from cave_catalog.auth.middleware import AuthUser, require_auth
 from cave_catalog.config import Settings, get_settings
 from cave_catalog.db.models import Asset
 from cave_catalog.db.session import get_session
+from cave_catalog.routers.helpers import (
+    get_asset,
+    now_utc,
+    require_asset_view_access,
+    require_datastack_permission,
+)
 from cave_catalog.schemas import (
     AccessResponse,
     AssetRequest,
@@ -47,16 +52,6 @@ def _get_http_client() -> AsyncClient:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _asset_is_expired(asset: Asset) -> bool:
-    if asset.expires_at is None:
-        return False
-    return asset.expires_at.replace(tzinfo=timezone.utc) < _now_utc()
 
 
 def _asset_to_response(asset: Asset) -> AssetResponse:
@@ -113,12 +108,7 @@ async def register_asset(
         uri=body.uri,
         fmt=body.format,
     )
-    # Auth check: user must have write permission on the datastack
-    if settings.auth.enabled and not user.has_permission(body.datastack, "edit"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Write permission required on datastack '{body.datastack}'",
-        )
+    require_datastack_permission(user, settings, body.datastack, "edit")
 
     # Duplicate check
     existing = await _find_duplicate(
@@ -167,7 +157,7 @@ async def register_asset(
         maturity=body.maturity.value,
         properties=body.properties,
         access_group=body.access_group,
-        created_at=_now_utc(),
+        created_at=now_utc(),
         expires_at=body.expires_at,
     )
     session.add(asset)
@@ -271,13 +261,9 @@ async def list_assets(
     settings: Settings = Depends(get_settings),
 ) -> list[AssetResponse]:
     logger.debug("list_assets", datastack=datastack, name=name, mat_version=mat_version)
-    if settings.auth.enabled and not user.has_permission(datastack, "view"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Read permission required on datastack '{datastack}'",
-        )
+    require_datastack_permission(user, settings, datastack, "view")
 
-    now = _now_utc()
+    now = now_utc()
     stmt = select(Asset).where(
         and_(
             Asset.datastack == datastack,
@@ -310,28 +296,15 @@ async def list_assets(
 
 
 @router.get("/{asset_id}", response_model=AssetResponse)
-async def get_asset(
+async def get_asset_by_id(
     asset_id: uuid.UUID,
     user: AuthUser = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> AssetResponse:
     logger.debug("get_asset", asset_id=str(asset_id))
-    asset = await session.get(Asset, asset_id)
-    if asset is None or _asset_is_expired(asset):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found"
-        )
-
-    if settings.auth.enabled:
-        required_resource = asset.access_group or asset.datastack
-        if not user.has_permission(required_resource, "view") and not user.in_group(
-            required_resource
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
-            )
-
+    asset = await get_asset(session, asset_id)
+    require_asset_view_access(user, settings, asset)
     return _asset_to_response(asset)
 
 
@@ -348,17 +321,8 @@ async def delete_asset(
     settings: Settings = Depends(get_settings),
 ) -> None:
     logger.debug("delete_asset", asset_id=str(asset_id))
-    asset = await session.get(Asset, asset_id)
-    if asset is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found"
-        )
-
-    if settings.auth.enabled and not user.has_permission(asset.datastack, "edit"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Write permission required on datastack '{asset.datastack}'",
-        )
+    asset = await get_asset(session, asset_id, check_expired=False)
+    require_datastack_permission(user, settings, asset.datastack, "edit")
 
     await session.delete(asset)
     await session.commit()
@@ -378,22 +342,8 @@ async def get_asset_access(
     settings: Settings = Depends(get_settings),
 ) -> AccessResponse:
     logger.debug("get_asset_access", asset_id=str(asset_id))
-
-    asset = await session.get(Asset, asset_id)
-    if asset is None or _asset_is_expired(asset):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found"
-        )
-
-    # Permission gating: consistent with get_asset
-    if settings.auth.enabled:
-        required_resource = asset.access_group or asset.datastack
-        if not user.has_permission(required_resource, "view") and not user.in_group(
-            required_resource
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
-            )
+    asset = await get_asset(session, asset_id)
+    require_asset_view_access(user, settings, asset)
 
     # Unmanaged assets: passthrough (no credentials)
     if not asset.is_managed:
