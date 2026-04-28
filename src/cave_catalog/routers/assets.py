@@ -10,7 +10,6 @@ import uuid
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from httpx import AsyncClient
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,8 +19,12 @@ from cave_catalog.config import Settings, get_settings
 from cave_catalog.db.models import Asset
 from cave_catalog.db.session import get_session
 from cave_catalog.routers.helpers import (
+    asset_to_response,
+    find_duplicate,
     get_asset,
+    get_http_client,
     now_utc,
+    raise_if_validation_failed,
     require_asset_view_access,
     require_datastack_permission,
 )
@@ -32,59 +35,13 @@ from cave_catalog.schemas import (
     ValidationCheck,
     ValidationReport,
 )
+from cave_catalog.table_schemas import TableResponse
 from cave_catalog.validation import run_validation_pipeline
+from cave_catalog.validation import check_name_reservation as _check_name_reservation
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
-
-# Shared httpx client (module-level singleton; fine for service lifetime)
-_http_client: AsyncClient | None = None
-
-
-def _get_http_client() -> AsyncClient:
-    global _http_client
-    if _http_client is None:
-        _http_client = AsyncClient()
-    return _http_client
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _asset_to_response(asset: Asset) -> AssetResponse:
-    return AssetResponse.model_validate(asset)
-
-
-async def _find_duplicate(
-    session: AsyncSession,
-    datastack: str,
-    name: str,
-    mat_version: int | None,
-    revision: int,
-) -> Asset | None:
-    if mat_version is not None:
-        stmt = select(Asset).where(
-            and_(
-                Asset.datastack == datastack,
-                Asset.name == name,
-                Asset.mat_version == mat_version,
-                Asset.revision == revision,
-            )
-        )
-    else:
-        stmt = select(Asset).where(
-            and_(
-                Asset.datastack == datastack,
-                Asset.name == name,
-                Asset.mat_version.is_(None),
-                Asset.revision == revision,
-            )
-        )
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none()
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +68,7 @@ async def register_asset(
     require_datastack_permission(user, settings, body.datastack, "edit")
 
     # Duplicate check
-    existing = await _find_duplicate(
+    existing = await find_duplicate(
         session, body.datastack, body.name, body.mat_version, body.revision
     )
     if existing is not None:
@@ -127,20 +84,10 @@ async def register_asset(
         uri=body.uri,
         fmt=body.format,
         properties=body.properties,
-        client=_get_http_client(),
+        client=get_http_client(),
         token=user.token,
     )
-
-    failures = {
-        k: v
-        for k, v in report.model_dump().items()
-        if v is not None and not v.get("passed", True)
-    }
-    if failures:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"message": "Validation failed", "checks": failures},
-        )
+    raise_if_validation_failed(report)
 
     asset = Asset(
         id=uuid.uuid4(),
@@ -167,7 +114,7 @@ async def register_asset(
     except IntegrityError:
         await session.rollback()
         # Race condition — duplicate was inserted between our check and insert
-        dup = await _find_duplicate(
+        dup = await find_duplicate(
             session, body.datastack, body.name, body.mat_version, body.revision
         )
         raise HTTPException(
@@ -181,7 +128,7 @@ async def register_asset(
     logger.info(
         "asset_registered", id=str(asset.id), datastack=body.datastack, name=body.name
     )
-    return _asset_to_response(asset)
+    return asset_to_response(asset)
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +162,7 @@ async def validate_asset(
     report.auth_check = ValidationCheck(passed=True)
 
     # Duplicate check
-    existing = await _find_duplicate(
+    existing = await find_duplicate(
         session, body.datastack, body.name, body.mat_version, body.revision
     )
     if existing is not None:
@@ -230,7 +177,7 @@ async def validate_asset(
         uri=body.uri,
         fmt=body.format,
         properties=body.properties,
-        client=_get_http_client(),
+        client=get_http_client(),
         token=user.token,
     )
     report.name_reservation_check = content_report.name_reservation_check
@@ -242,11 +189,48 @@ async def validate_asset(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/v1/assets/check-name
+# ---------------------------------------------------------------------------
+
+
+@router.get("/check-name")
+async def check_name(
+    datastack: str = Query(...),
+    name: str = Query(...),
+    mat_version: int | None = Query(default=None),
+    revision: int = Query(default=0),
+    user: AuthUser = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    # 1. Check name reservation against mat tables
+    reservation = await _check_name_reservation(
+        datastack=datastack,
+        name=name,
+        is_mat_source=False,
+        client=get_http_client(),
+        token=user.token,
+    )
+    if not reservation.passed:
+        return {"available": False, "reason": "reserved"}
+
+    # 2. Check for duplicate asset in DB
+    existing = await find_duplicate(session, datastack, name, mat_version, revision)
+    if existing is not None:
+        return {
+            "available": False,
+            "reason": "duplicate",
+            "existing_id": str(existing.id),
+        }
+
+    return {"available": True}
+
+
+# ---------------------------------------------------------------------------
 # GET /api/v1/assets/
 # ---------------------------------------------------------------------------
 
 
-@router.get("/", response_model=list[AssetResponse])
+@router.get("/", response_model=list[TableResponse | AssetResponse])
 async def list_assets(
     datastack: str = Query(...),
     name: str | None = Query(default=None),
@@ -259,7 +243,7 @@ async def list_assets(
     user: AuthUser = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> list[AssetResponse]:
+) -> list[AssetResponse | TableResponse]:
     logger.debug("list_assets", datastack=datastack, name=name, mat_version=mat_version)
     require_datastack_permission(user, settings, datastack, "view")
 
@@ -287,7 +271,7 @@ async def list_assets(
 
     result = await session.execute(stmt)
     assets = result.scalars().all()
-    return [_asset_to_response(a) for a in assets]
+    return [asset_to_response(a) for a in assets]
 
 
 # ---------------------------------------------------------------------------
@@ -295,17 +279,17 @@ async def list_assets(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{asset_id}", response_model=AssetResponse)
+@router.get("/{asset_id}", response_model=TableResponse | AssetResponse)
 async def get_asset_by_id(
     asset_id: uuid.UUID,
     user: AuthUser = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> AssetResponse:
+) -> AssetResponse | TableResponse:
     logger.debug("get_asset", asset_id=str(asset_id))
     asset = await get_asset(session, asset_id)
     require_asset_view_access(user, settings, asset)
-    return _asset_to_response(asset)
+    return asset_to_response(asset)
 
 
 # ---------------------------------------------------------------------------

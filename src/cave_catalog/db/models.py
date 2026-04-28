@@ -1,9 +1,17 @@
 import uuid
+from collections.abc import MutableMapping
 from datetime import datetime, timezone
 
 from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class _FallbackPolymorphicMap(dict, MutableMapping):
+    """Allow unknown ``asset_type`` values to load as the base ``Asset`` class."""
+
+    def __missing__(self, key):
+        return self["asset"]
 
 
 class Base(DeclarativeBase):
@@ -23,7 +31,7 @@ class Asset(Base):
     mat_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     uri: Mapped[str] = mapped_column(String, nullable=False)
-    format: Mapped[str] = mapped_column(String, nullable=False)
+    format: Mapped[str | None] = mapped_column(String, nullable=True)
     asset_type: Mapped[str] = mapped_column(String, nullable=False)
     owner: Mapped[int] = mapped_column(Integer, nullable=False)
     is_managed: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -39,6 +47,20 @@ class Asset(Base):
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    __mapper_args__ = {
+        "polymorphic_on": "asset_type",
+        "polymorphic_identity": "asset",
+        "with_polymorphic": "*",
+    }
+
+    # Table-specific nullable columns (populated only for asset_type="table")
+    source: Mapped[str | None] = mapped_column(String, nullable=True)
+    cached_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_cached_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    column_annotations: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     __table_args__ = (
         # Uniqueness when mat_version is present
@@ -61,3 +83,17 @@ class Asset(Base):
             postgresql_where=text("mat_version IS NULL"),
         ),
     )
+
+
+# Install fallback polymorphic map so unknown asset_type values load as Asset
+Asset.__mapper__.polymorphic_map = _FallbackPolymorphicMap(
+    Asset.__mapper__.polymorphic_map
+)
+
+
+class Table(Asset):
+    """Table asset — single table inheritance subclass of Asset."""
+
+    __mapper_args__ = {
+        "polymorphic_identity": "table",
+    }
