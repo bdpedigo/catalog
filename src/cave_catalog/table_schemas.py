@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 
 from cave_catalog.schemas import AssetRequest, AssetResponse
 
-
 # ---------------------------------------------------------------------------
 # Cached metadata models (task 1.3)
 # ---------------------------------------------------------------------------
@@ -102,3 +101,40 @@ class TableResponse(AssetResponse):
 
 class AnnotationUpdateRequest(BaseModel):
     column_annotations: list[ColumnAnnotation]
+
+
+# ---------------------------------------------------------------------------
+# Column merging helper (task 4.7)
+# ---------------------------------------------------------------------------
+
+
+def merge_columns(
+    metadata: TableMetadata | None,
+    annotations: list[ColumnAnnotation] | None,
+) -> list[MergedColumn]:
+    """Merge cached column schema with user-provided annotations by column name.
+
+    For each column in ``metadata.columns``, look up matching annotation by
+    ``column_name``.  Annotated columns get description + links; unannotated
+    columns get None/empty.  Orphaned annotations (no matching column in
+    metadata) are silently dropped — they're inert until the column reappears.
+    """
+    if not metadata or not metadata.columns:
+        return []
+
+    ann_by_name: dict[str, ColumnAnnotation] = {}
+    for ann in annotations or []:
+        ann_by_name[ann.column_name] = ann
+
+    merged: list[MergedColumn] = []
+    for col in metadata.columns:
+        ann = ann_by_name.get(col.name)
+        merged.append(
+            MergedColumn(
+                name=col.name,
+                dtype=col.dtype,
+                description=ann.description if ann else None,
+                links=ann.links if ann else [],
+            )
+        )
+    return merged

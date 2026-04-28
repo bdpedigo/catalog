@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Coroutine
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -211,6 +212,129 @@ async def check_name_reservation(
             ),
         )
     return ValidationCheck(passed=True)
+
+
+# --- Column link validation -------------------------------------------------
+
+
+@dataclass
+class LinkValidationError:
+    """A single column link that failed validation."""
+
+    column_name: str
+    link_type: str
+    target_table: str
+    target_column: str
+    reason: str
+
+
+@dataclass
+class LinkValidationResult:
+    """Result of validating column links against the materialization service."""
+
+    passed: bool
+    errors: list[LinkValidationError] = field(default_factory=list)
+    skipped: bool = False
+    message: str | None = None
+
+
+async def validate_column_links(
+    annotations: list[dict[str, Any]],
+    datastack: str,
+    client: AsyncClient,
+    token: str = "",
+) -> LinkValidationResult:
+    """Validate column link targets against the materialization service.
+
+    Checks that each ``target_table`` referenced in column annotations exists
+    in the materialization service for the given datastack.  Column existence
+    is not validated (the ME API does not expose flat column names directly).
+
+    Parameters
+    ----------
+    annotations
+        List of column annotation dicts, each with ``column_name``, optional
+        ``links`` list containing ``{link_type, target_table, target_column}``.
+    datastack
+        Datastack name to validate against.
+    client
+        httpx async client for ME calls.
+    token
+        Optional bearer token.
+
+    Returns
+    -------
+    LinkValidationResult
+    """
+    # Collect all unique target tables referenced in links
+    links_by_table: dict[str, list[tuple[str, dict[str, str]]]] = {}
+    for ann in annotations:
+        col_name = ann.get("column_name", "")
+        for link in ann.get("links", []):
+            target = link.get("target_table", "")
+            if target:
+                links_by_table.setdefault(target, []).append((col_name, link))
+
+    if not links_by_table:
+        return LinkValidationResult(passed=True)
+
+    settings = get_settings()
+    if not settings.mat_engine_url:
+        logger.warning("link_validation_skipped", reason="MAT_ENGINE_URL not configured")
+        return LinkValidationResult(
+            passed=True,
+            skipped=True,
+            message="Column link validation skipped: MAT_ENGINE_URL not configured",
+        )
+
+    # Fetch table list from ME
+    base = settings.mat_engine_url.rstrip("/")
+    url = f"{base}/api/v2/datastack/{datastack}/tables"
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    try:
+        response = await client.get(url, headers=headers, timeout=15.0)
+    except Exception as exc:
+        logger.warning("link_validation_skipped", reason=str(exc))
+        return LinkValidationResult(
+            passed=True,
+            skipped=True,
+            message=f"Column link validation skipped: {exc}",
+        )
+
+    if response.status_code in (301, 302, 303, 307, 308, 401, 403):
+        return LinkValidationResult(
+            passed=True,
+            skipped=True,
+            message=f"Column link validation skipped: ME auth failed (HTTP {response.status_code})",
+        )
+    if response.status_code != 200:
+        return LinkValidationResult(
+            passed=True,
+            skipped=True,
+            message=f"Column link validation skipped: ME returned HTTP {response.status_code}",
+        )
+
+    mat_tables: set[str] = set(response.json())
+
+    # Validate each target table exists
+    errors: list[LinkValidationError] = []
+    for target_table, col_links in links_by_table.items():
+        if target_table not in mat_tables:
+            for col_name, link in col_links:
+                errors.append(
+                    LinkValidationError(
+                        column_name=col_name,
+                        link_type=link.get("link_type", ""),
+                        target_table=target_table,
+                        target_column=link.get("target_column", ""),
+                        reason=f"Table '{target_table}' not found in materialization service for datastack '{datastack}'",
+                    )
+                )
+
+    if errors:
+        return LinkValidationResult(passed=False, errors=errors)
+    return LinkValidationResult(passed=True)
 
 
 # --- Main pipeline ----------------------------------------------------------

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from cave_catalog.config import get_settings
 from cave_catalog.db.session import get_engine
-from cave_catalog.routers import assets, health
+from cave_catalog.routers import assets, health, tables
 
 logger = structlog.get_logger()
 
@@ -52,5 +52,6 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(assets.router)
+    app.include_router(tables.router)
 
     return app

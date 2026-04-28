@@ -1,4 +1,4 @@
-"""Tests for asset registry endpoints (task 2.8).
+"""Tests for asset registry endpoints (task 2.8) and Phase 5 unified reads.
 
 Uses FastAPI dependency_overrides with a real in-memory SQLite DB so no live
 Postgres is needed.  External HTTP calls (URI reachability, format sniff, ME
@@ -12,6 +12,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from cave_catalog.schemas import ValidationCheck, ValidationReport
+from cave_catalog.table_schemas import ColumnInfo, TableMetadata
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -288,3 +289,143 @@ async def test_delete_asset_success(client, monkeypatch):
 async def test_delete_asset_not_found(client):
     response = await client.delete(f"/api/v1/assets/{uuid.uuid4()}")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Unified read surface returns table-specific fields
+# ---------------------------------------------------------------------------
+
+_TABLE_METADATA = TableMetadata(
+    n_rows=100,
+    n_columns=2,
+    n_bytes=5000,
+    columns=[
+        ColumnInfo(name="a", dtype="int64"),
+        ColumnInfo(name="b", dtype="string"),
+    ],
+    partition_columns=[],
+)
+
+
+def _patch_table_helpers(monkeypatch):
+    """Patch extraction, validation, and link validation for table registration."""
+    mock_extractor = AsyncMock()
+    mock_extractor.extract = AsyncMock(return_value=_TABLE_METADATA)
+    monkeypatch.setattr(
+        "cave_catalog.routers.tables.get_extractor",
+        lambda fmt: mock_extractor,
+    )
+
+    from cave_catalog.validation import LinkValidationResult
+
+    monkeypatch.setattr(
+        "cave_catalog.routers.tables.validate_column_links",
+        AsyncMock(return_value=LinkValidationResult(passed=True, errors=[])),
+    )
+
+
+def _table_payload(**overrides: Any) -> dict:
+    base = {
+        "datastack": "minnie65_public",
+        "name": "my_table",
+        "revision": 0,
+        "uri": "gs://bucket/tables/my_table/",
+        "format": "delta",
+        "is_managed": True,
+        "mutability": "static",
+        "maturity": "stable",
+        "properties": {},
+    }
+    base.update(overrides)
+    return base
+
+
+async def _register_table_via_tables_api(client, monkeypatch, **overrides) -> dict:
+    _patch_table_helpers(monkeypatch)
+    # Patch validation on the tables router (not the assets router)
+    monkeypatch.setattr(
+        "cave_catalog.routers.tables.run_validation_pipeline",
+        AsyncMock(return_value=_passing_report()),
+    )
+    resp = await client.post(
+        "/api/v1/tables/register", json=_table_payload(**overrides)
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def test_list_assets_includes_table_fields(client, monkeypatch):
+    """GET /assets/ should include table-specific fields for table assets."""
+    table = await _register_table_via_tables_api(client, monkeypatch)
+
+    response = await client.get("/api/v1/assets/?datastack=minnie65_public")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    item = data[0]
+
+    # Table-specific fields should be present
+    assert item["id"] == table["id"]
+    assert item["asset_type"] == "table"
+    assert item["source"] is not None
+    assert item["cached_metadata"] is not None
+    assert item["cached_metadata"]["n_rows"] == 100
+    assert "columns" in item
+    assert len(item["columns"]) == 2
+
+
+async def test_get_asset_by_id_returns_table_fields(client, monkeypatch):
+    """GET /assets/{id} should return TableResponse with merged columns for table assets."""
+    table = await _register_table_via_tables_api(client, monkeypatch)
+
+    response = await client.get(f"/api/v1/assets/{table['id']}")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["asset_type"] == "table"
+    assert data["cached_metadata"]["n_columns"] == 2
+    assert len(data["columns"]) == 2
+    assert data["columns"][0]["name"] == "a"
+    assert data["columns"][0]["dtype"] == "int64"
+
+
+async def test_list_assets_mixed_types(client, monkeypatch):
+    """GET /assets/ should return both table and non-table assets with correct fields."""
+    # Register a plain asset
+    await _register(client, monkeypatch, name="plain_asset", asset_type="asset")
+
+    # Register a table
+    await _register_table_via_tables_api(
+        client, monkeypatch, name="table_asset"
+    )
+
+    response = await client.get("/api/v1/assets/?datastack=minnie65_public")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+
+    by_name = {item["name"]: item for item in data}
+
+    # Plain asset should NOT have table fields
+    plain = by_name["plain_asset"]
+    assert "columns" not in plain or plain.get("columns") is None
+
+    # Table asset should HAVE table fields
+    table = by_name["table_asset"]
+    assert table["asset_type"] == "table"
+    assert "columns" in table
+    assert len(table["columns"]) == 2
+    assert table["cached_metadata"] is not None
+
+
+async def test_register_non_table_asset_still_works(client, monkeypatch):
+    """POST /assets/register for non-table assets should still work without table fields."""
+    _patch_validation(monkeypatch)
+    payload = _asset_payload(asset_type="asset", name="generic_file")
+    resp = await client.post("/api/v1/assets/register", json=payload)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["asset_type"] == "asset"
+    assert data["name"] == "generic_file"
+    # No table-specific fields in response
+    assert "columns" not in data or data.get("columns") is None
