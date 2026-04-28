@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}CAVE Catalog{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="service-name">CAVE Catalog</span>
+    </div>
+    <div class="topbar-center">
+      <label for="datastack-selector">Datastack:</label>
+      <select id="datastack-selector" name="datastack"
+              onchange="window.location.href='/ui/select-datastack?datastack=' + this.value"
+              title="Select datastack">
+        {% if datastacks is defined and datastacks %}
+          {% for ds in datastacks %}
+            <option value="{{ ds }}" {% if ds == current_datastack %}selected{% endif %}>{{ ds }}</option>
+          {% endfor %}
+        {% else %}
+          <option value="">No datastacks configured</option>
+        {% endif %}
+      </select>
+    </div>
+    <div class="topbar-right">
+      {% if user is defined and user %}
+        <span class="user-info">{{ user.email }}</span>
+        <a href="/ui/logout" class="btn-link">Logout</a>
+      {% else %}
+        <a href="/ui/login" class="btn-link">Login</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar">
+      <ul>
+        <li><a href="/ui/register" class="{% if active_page == 'register' %}active{% endif %}">Register</a></li>
+        <li><a href="/ui/explore" class="{% if active_page == 'explore' %}active{% endif %}">Explore Assets</a></li>
+      </ul>
+    </nav>
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 
 from pydantic import Field
@@ -24,7 +25,21 @@ class Settings(BaseSettings):
     service_name: str = Field(default="cave-catalog", alias="SERVICE_NAME")
     mat_engine_url: str | None = Field(default=None, alias="MAT_ENGINE_URL")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    datastacks_raw: str = Field(default="", alias="DATASTACKS")
+    cave_token: str | None = Field(default=None, alias="CAVE_TOKEN")
+    caveclient_server_address: str | None = Field(
+        default=None, alias="CAVECLIENT_SERVER_ADDRESS"
+    )
     auth: AuthSettings = Field(default_factory=AuthSettings)
+
+    @property
+    def datastacks(self) -> list[str]:
+        raw = self.datastacks_raw.strip()
+        if not raw:
+            return []
+        if raw.startswith("["):
+            return json.loads(raw)
+        return [s.strip() for s in raw.split(",") if s.strip()]
 
     model_config = SettingsConfigDict(
         env_file=".env",

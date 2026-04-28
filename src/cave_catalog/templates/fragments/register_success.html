@@ -1,0 +1,25 @@
+{# HTMX fragment: registration success #}
+<div class="alert alert-success">
+  <strong>Table registered successfully!</strong>
+</div>
+
+<div class="form-section">
+  <dl class="detail-list">
+    <dt>Table ID</dt>
+    <dd><code>{{ table_id }}</code></dd>
+    <dt>Name</dt>
+    <dd>{{ table_name }}</dd>
+    <dt>Datastack</dt>
+    <dd>{{ datastack }}</dd>
+    {% if mat_version %}
+    <dt>Mat Version</dt>
+    <dd>{{ mat_version }}</dd>
+    {% endif %}
+    <dt>URI</dt>
+    <dd><code>{{ uri }}</code></dd>
+    <dt>Format</dt>
+    <dd>{{ format }}</dd>
+  </dl>
+</div>
+
+<a href="/ui/register" class="btn btn-secondary">Register Another</a>

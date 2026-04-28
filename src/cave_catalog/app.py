@@ -1,14 +1,18 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from cave_catalog.config import get_settings
 from cave_catalog.db.session import get_engine
-from cave_catalog.routers import assets, health, tables
+from cave_catalog.routers import assets, health, tables, ui
+from cave_catalog.routers.ui import _RedirectException
 
 logger = structlog.get_logger()
 
@@ -53,5 +57,13 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(assets.router)
     app.include_router(tables.router)
+    app.include_router(ui.router)
+
+    @app.exception_handler(_RedirectException)
+    async def _handle_redirect(request: Request, exc: _RedirectException):
+        return RedirectResponse(url=exc.url, status_code=302)
+
+    _pkg_dir = Path(__file__).resolve().parent
+    app.mount("/static", StaticFiles(directory=_pkg_dir / "static"), name="static")
 
     return app

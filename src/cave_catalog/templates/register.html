@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Register — CAVE Catalog{% endblock %}
+{% block content %}
+<h1>Register a Table</h1>
+
+<form id="register-form">
+
+  {# ── Step 1: URI + Preview ── #}
+  <section class="form-section">
+    <h2>1. Data Source</h2>
+
+    <div class="form-group">
+      <label for="uri">Cloud Storage URI</label>
+      <input type="text" id="uri" name="uri" placeholder="gs://bucket/path/to/table/" required>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group" style="flex: 0 0 200px;">
+        <label for="format">Format</label>
+        <select id="format" name="format">
+          <option value="delta" selected>Delta Lake</option>
+          <option value="parquet">Parquet</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex: 0 0 auto; align-self: flex-end;">
+        <button type="button" class="btn btn-secondary"
+                hx-post="/ui/preview"
+                hx-include="#uri, #format"
+                hx-target="#preview-area"
+                hx-swap="innerHTML"
+                onclick="
+                  document.getElementById('preview-area').innerHTML = '<p class=\'text-muted\' style=\'padding: 0.5rem 0;\'>Loading preview…</p>';
+                  document.getElementById('registration-fields').style.display = 'none';
+                  document.getElementById('column-annotations').innerHTML = '';
+                  document.getElementById('register-result').innerHTML = '';
+                ">
+          Preview
+        </button>
+      </div>
+    </div>
+  </section>
+
+  {# ── Preview results area (populated by HTMX) ── #}
+  <div id="preview-area"></div>
+
+  {# ── Step 2: Registration details (shown after preview) ── #}
+  <div id="registration-fields" style="display: none;">
+    <section class="form-section">
+      <h2>2. Table Details</h2>
+
+      <div class="form-row">
+        <div class="form-group" style="flex: 1;">
+          <label for="table-name">Table Name</label>
+          <input type="text" id="table-name" name="name" required
+                 hx-get="/ui/fragments/check-name"
+                 hx-trigger="blur changed"
+                 hx-target="#name-check-result"
+                 hx-include="#table-name"
+                 hx-swap="innerHTML"
+                 placeholder="e.g., my_synapse_predictions">
+          <div id="name-check-result" class="indicator"></div>
+        </div>
+        <div class="form-group" style="flex: 0 0 160px;">
+          <label for="mat-version">Mat Version <span class="text-muted">(optional)</span></label>
+          <input type="number" id="mat-version" name="mat_version" placeholder="e.g., 943">
+        </div>
+      </div>
+    </section>
+
+    {# ── Step 3: Column annotations (populated by preview) ── #}
+    <section class="form-section">
+      <h2>3. Column Annotations</h2>
+      <div id="column-annotations"></div>
+    </section>
+
+    {# ── Submit ── #}
+    <div id="register-result"></div>
+    <section class="form-section">
+      <button type="button" class="btn btn-primary"
+              hx-post="/ui/register/submit"
+              hx-include="#register-form"
+              hx-target="#register-result"
+              hx-swap="innerHTML"
+              hx-indicator="#submit-spinner">
+        Register Table
+      </button>
+      <span id="submit-spinner" class="htmx-indicator">Registering…</span>
+    </section>
+  </div>
+
+</form>
+
+{# ── Link row template (used by JS) ── #}
+<template id="link-row-template">
+  <div class="link-row">
+    <select class="link-type" name="" style="width: auto;">
+      <option value="foreign_key">Foreign Key</option>
+      <option value="join">Join</option>
+    </select>
+    <select class="link-target" name=""
+            hx-get="/ui/fragments/linkable-targets"
+            hx-trigger="focus once"
+            hx-swap="innerHTML">
+      <option value="">-- Select target --</option>
+    </select>
+    <select class="link-column" name="">
+      <option value="">-- Select column --</option>
+    </select>
+    <button type="button" class="btn btn-secondary btn-small remove-link-btn"
+            onclick="this.closest('.link-row').remove()">
+      ✕
+    </button>
+  </div>
+</template>
+
+<script>
+let linkCounter = 0;
+
+function addLinkRow(colIndex) {
+  const container = document.getElementById('links-' + colIndex);
+  const template = document.getElementById('link-row-template');
+  const clone = template.content.cloneNode(true);
+  const linkId = linkCounter++;
+
+  // Set unique names for form submission
+  const typeSelect = clone.querySelector('.link-type');
+  typeSelect.name = 'link_type_' + colIndex + '_' + linkId;
+
+  const targetSelect = clone.querySelector('.link-target');
+  targetSelect.name = 'link_target_' + colIndex + '_' + linkId;
+
+  const columnSelect = clone.querySelector('.link-column');
+  columnSelect.name = 'link_column_' + colIndex + '_' + linkId;
+
+  // Wire up cascading: when target changes, load columns
+  targetSelect.addEventListener('change', function() {
+    const targetName = this.value;
+    const selectedOption = this.options[this.selectedIndex];
+    const targetType = selectedOption?.dataset?.type || 'table';
+    if (targetName) {
+      const url = '/ui/fragments/target-columns?target_name=' +
+        encodeURIComponent(targetName) + '&target_type=' + encodeURIComponent(targetType);
+      htmx.ajax('GET', url, {target: columnSelect, swap: 'innerHTML'});
+    } else {
+      columnSelect.innerHTML = '<option value="">-- Select column --</option>';
+    }
+  });
+
+  container.appendChild(clone);
+
+  // Process HTMX attributes on the newly added elements
+  htmx.process(container.lastElementChild);
+}
+</script>
+{% endblock %}

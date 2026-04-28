@@ -1,0 +1,77 @@
+{# HTMX fragment: preview results after metadata extraction #}
+
+{% if error %}
+<div class="alert alert-error">
+  <strong>Preview failed:</strong> {{ error }}
+</div>
+{% else %}
+<section class="form-section">
+  <h2>Preview Results</h2>
+
+  <div class="metadata-summary">
+    <span class="badge">{{ format | upper }}</span>
+    {% if metadata.n_rows is not none %}
+      <span class="text-muted">{{ "{:,}".format(metadata.n_rows) }} rows</span>
+    {% endif %}
+    {% if metadata.n_columns is not none %}
+      <span class="text-muted">· {{ metadata.n_columns }} columns</span>
+    {% endif %}
+    {% if metadata.n_bytes is not none %}
+      {% if metadata.n_bytes >= 1073741824 %}
+      <span class="text-muted">· {{ "%.1f"|format(metadata.n_bytes / 1073741824) }} GB</span>
+      {% elif metadata.n_bytes >= 1048576 %}
+      <span class="text-muted">· {{ "%.1f"|format(metadata.n_bytes / 1048576) }} MB</span>
+      {% elif metadata.n_bytes >= 1024 %}
+      <span class="text-muted">· {{ "%.1f"|format(metadata.n_bytes / 1024) }} KB</span>
+      {% else %}
+      <span class="text-muted">· {{ metadata.n_bytes }} B</span>
+      {% endif %}
+    {% endif %}
+    {% if metadata.partition_columns %}
+      <span class="text-muted">· partitioned by {{ metadata.partition_columns | join(", ") }}</span>
+    {% endif %}
+  </div>
+</section>
+
+{# Populate the column annotations table #}
+<script>
+  document.getElementById('registration-fields').style.display = 'block';
+  document.getElementById('column-annotations').innerHTML = `
+  <table class="column-table annotation-table">
+    <thead>
+      <tr>
+        <th>Column</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Links</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for col in metadata.columns %}
+      <tr>
+        <td>
+          <code>{{ col.name }}</code>
+          <input type="hidden" name="col_name_{{ loop.index0 }}" value="{{ col.name }}">
+          <input type="hidden" name="col_dtype_{{ loop.index0 }}" value="{{ col.dtype }}">
+        </td>
+        <td class="text-muted">{{ col.dtype }}</td>
+        <td>
+          <input type="text" name="col_desc_{{ loop.index0 }}"
+                 placeholder="Optional description"
+                 class="col-description">
+        </td>
+        <td class="links-cell">
+          <div class="links-container" id="links-{{ loop.index0 }}"></div>
+          <button type="button" class="btn btn-secondary btn-small add-link-btn"
+                  onclick="addLinkRow({{ loop.index0 }})">
+            + Add Link
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <input type="hidden" name="n_columns" value="{{ metadata.columns | length }}">
+  `;
+</script>
+{% endif %}

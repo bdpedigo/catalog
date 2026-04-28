@@ -37,6 +37,7 @@ from cave_catalog.schemas import (
 )
 from cave_catalog.table_schemas import TableResponse
 from cave_catalog.validation import run_validation_pipeline
+from cave_catalog.validation import check_name_reservation as _check_name_reservation
 
 logger = structlog.get_logger()
 
@@ -185,6 +186,43 @@ async def validate_asset(
     report.mat_table_verify = content_report.mat_table_verify
 
     return report
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/assets/check-name
+# ---------------------------------------------------------------------------
+
+
+@router.get("/check-name")
+async def check_name(
+    datastack: str = Query(...),
+    name: str = Query(...),
+    mat_version: int | None = Query(default=None),
+    revision: int = Query(default=0),
+    user: AuthUser = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    # 1. Check name reservation against mat tables
+    reservation = await _check_name_reservation(
+        datastack=datastack,
+        name=name,
+        is_mat_source=False,
+        client=get_http_client(),
+        token=user.token,
+    )
+    if not reservation.passed:
+        return {"available": False, "reason": "reserved"}
+
+    # 2. Check for duplicate asset in DB
+    existing = await find_duplicate(session, datastack, name, mat_version, revision)
+    if existing is not None:
+        return {
+            "available": False,
+            "reason": "duplicate",
+            "existing_id": str(existing.id),
+        }
+
+    return {"available": True}
 
 
 # ---------------------------------------------------------------------------

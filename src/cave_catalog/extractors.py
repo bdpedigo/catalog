@@ -68,7 +68,16 @@ class DeltaMetadataExtractor(MetadataExtractor):
         if storage_options:
             kwargs["storage_options"] = storage_options
 
-        dt = await asyncio.to_thread(lambda: DeltaTable(uri, **kwargs))
+        try:
+            dt = await asyncio.to_thread(lambda: DeltaTable(uri, **kwargs))
+        except Exception as exc:
+            msg = str(exc)
+            if "no files in log segment" in msg.lower() or "log segment" in msg.lower():
+                raise ValueError(
+                    f"No Delta transaction log found at '{uri}'. "
+                    "This path may not contain a Delta Lake table."
+                ) from exc
+            raise
 
         schema = await asyncio.to_thread(lambda: dt.schema())
         columns = [
@@ -141,15 +150,25 @@ class ParquetMetadataExtractor(MetadataExtractor):
             for name, dtype in schema.items()
         ]
 
-        # Collect row count and estimated size
+        # Get on-disk size via fsspec and row count from parquet metadata
         n_rows: int | None = None
         n_bytes: int | None = None
         try:
-            df = await asyncio.to_thread(lambda: lf.collect())
-            n_rows = len(df)
-            n_bytes = df.estimated_size()
-        except Exception:
-            logger.debug("parquet_stats_unavailable", uri=uri)
+            import fsspec
+            import pyarrow.parquet as pq
+
+            fs, path = await asyncio.to_thread(
+                lambda: fsspec.core.url_to_fs(uri, **(storage_options or {}))
+            )
+            info = await asyncio.to_thread(lambda: fs.info(path))
+            n_bytes = info.get("size")
+
+            pq_meta = await asyncio.to_thread(
+                lambda: pq.read_metadata(path, filesystem=fs)
+            )
+            n_rows = pq_meta.num_rows
+        except Exception as exc:
+            logger.warning("parquet_stats_unavailable", uri=uri, error=str(exc))
 
         return TableMetadata(
             n_rows=n_rows,

@@ -1,0 +1,12 @@
+{# HTMX fragment: registration error #}
+<div class="alert alert-error">
+  <strong>Registration failed:</strong> {{ error }}
+</div>
+
+{% if details %}
+<ul class="error-details">
+  {% for d in details %}
+  <li>{{ d }}</li>
+  {% endfor %}
+</ul>
+{% endif %}

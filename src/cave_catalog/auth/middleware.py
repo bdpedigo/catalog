@@ -196,8 +196,11 @@ def create_token_cookie_response(redirect_url: str, token: str) -> Response:
 
 
 def get_authorize_url(settings: Settings, redirect_url: str) -> str:
+    # AUTH_SERVICE_URL is e.g. "https://globalv1.daf-apis.com/auth" (for API calls)
+    # but the OAuth authorize endpoint lives on the sticky auth app at /sticky_auth/api/v1/authorize
     auth_url = settings.auth.service_url.rstrip("/")
-    return f"{auth_url}/api/v1/authorize?redirect={quote(redirect_url)}"
+    base_url = auth_url.removesuffix("/auth")
+    return f"{base_url}/sticky_auth/api/v1/authorize?redirect={quote(redirect_url)}"
 
 
 async def get_current_user(
