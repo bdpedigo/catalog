@@ -23,7 +23,7 @@ class AssetRequest(BaseModel):
     mat_version: int | None = None
     revision: int = Field(default=0, ge=0)
     uri: str
-    format: str
+    format: str | None = None
     asset_type: str
     is_managed: bool
     mutability: Mutability = Mutability.STATIC
@@ -40,7 +40,7 @@ class AssetResponse(BaseModel):
     mat_version: int | None
     revision: int
     uri: str
-    format: str
+    format: str | None
     asset_type: str
     owner: int
     is_managed: bool
