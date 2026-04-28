@@ -26,27 +26,13 @@ class ColumnInfo(BaseModel):
 
 
 class TableMetadata(BaseModel):
-    """Base cached metadata common to all table formats."""
+    """Cached metadata common to all table formats."""
 
     n_rows: int | None = None
     n_columns: int | None = None
     n_bytes: int | None = None
     columns: list[ColumnInfo] = Field(default_factory=list)
-
-
-class DeltaMetadata(TableMetadata):
-    """Cached metadata for Delta Lake tables."""
-
-    delta_version: int
     partition_columns: list[str] = Field(default_factory=list)
-    z_order_columns: list[str] | None = None
-
-
-class ParquetMetadata(TableMetadata):
-    """Cached metadata for Parquet tables."""
-
-    row_group_count: int
-    compression: str
 
 
 # ---------------------------------------------------------------------------
