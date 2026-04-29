@@ -159,3 +159,20 @@ async def get_target_columns(
         logger.exception("Failed to fetch columns for %s/%s", datastack, target_name)
         raise MatProxyError(f"Failed to fetch columns for '{target_name}': {e}") from e
     return columns
+
+
+async def warm_cache(datastack: str, version: int | None = None) -> None:
+    """Pre-warm the CAVEclient cache by fetching table and view lists.
+
+    Best-effort: failures are logged but not raised.
+    """
+    try:
+        await asyncio.gather(
+            get_mat_tables(datastack, version),
+            get_mat_views(datastack, version),
+        )
+        logger.info("Cache warmed for datastack=%s", datastack)
+    except Exception:
+        logger.warning(
+            "Failed to warm cache for datastack=%s", datastack, exc_info=True
+        )

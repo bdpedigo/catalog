@@ -1,5 +1,7 @@
 """UI route handlers for the server-rendered frontend."""
 
+import asyncio
+
 import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -20,6 +22,7 @@ from cave_catalog.mat_proxy import (
     MatProxyError,
     get_linkable_targets,
     get_target_columns,
+    warm_cache,
 )
 from cave_catalog.routers.helpers import find_duplicate, get_http_client
 from cave_catalog.templating import templates
@@ -145,6 +148,9 @@ async def register_page(
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
 ):
+    datastack = _get_current_datastack(request, settings)
+    if datastack:
+        asyncio.create_task(warm_cache(datastack))
     return templates.TemplateResponse(
         request,
         "register.html",
