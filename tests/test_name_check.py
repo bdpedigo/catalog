@@ -166,3 +166,94 @@ class TestCheckNameFragment:
         assert resp.status_code == 200
         assert "&#10007;" in resp.text or "✗" in resp.text
         assert "reserved" in resp.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Name format validation tests
+# ---------------------------------------------------------------------------
+
+import pytest
+
+from cave_catalog.validation import validate_asset_name
+
+
+class TestValidateAssetName:
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "my_table",
+            "synapses",
+            "abc_123",
+            "a",
+            "synapses_v4",
+            "my_table.by_pre_root",
+            "x.y",
+        ],
+    )
+    def test_valid_names(self, name):
+        assert validate_asset_name(name) == name
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "MyTable",
+            "123_table",
+            "_hidden",
+            "my-table",
+            "my table",
+            "",
+            "my_table.",
+            ".suffix",
+            "a.b.c",
+            "UPPER",
+            "has Space",
+        ],
+    )
+    def test_invalid_names(self, name):
+        with pytest.raises(ValueError):
+            validate_asset_name(name)
+
+
+class TestCheckNameFormatAPI:
+    """Format validation in GET /api/v1/assets/check-name."""
+
+    async def test_invalid_format_returns_unavailable(self, client):
+        resp = await client.get(
+            "/api/v1/assets/check-name",
+            params={"datastack": "minnie65_public", "name": "Bad-Name"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available"] is False
+        assert data["reason"] == "invalid_format"
+
+    async def test_valid_format_proceeds_to_reservation(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "cave_catalog.routers.assets._check_name_reservation",
+            AsyncMock(return_value=ValidationCheck(passed=True)),
+        )
+        resp = await client.get(
+            "/api/v1/assets/check-name",
+            params={"datastack": "minnie65_public", "name": "good_name"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["available"] is True
+
+
+class TestCheckNameFormatFragment:
+    """Format validation in GET /ui/fragments/check-name."""
+
+    async def test_invalid_format_shows_error(self, client, monkeypatch):
+        monkeypatch.setenv("DATASTACKS", "minnie65_public")
+        from cave_catalog.config import get_settings
+
+        get_settings.cache_clear()
+
+        resp = await client.get(
+            "/ui/fragments/check-name",
+            params={"name": "Bad-Name"},
+            cookies={"cave_catalog_datastack": "minnie65_public"},
+        )
+        assert resp.status_code == 200
+        assert "&#10007;" in resp.text or "✗" in resp.text
+        assert "invalid" in resp.text.lower() or "must be" in resp.text.lower()

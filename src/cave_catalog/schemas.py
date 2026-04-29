@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Mutability(StrEnum):
@@ -31,6 +31,13 @@ class AssetRequest(BaseModel):
     properties: dict[str, Any] = Field(default_factory=dict)
     access_group: str | None = None
     expires_at: datetime | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_must_be_snake_case(cls, v: str) -> str:
+        from cave_catalog.validation import validate_asset_name
+
+        return validate_asset_name(v)
 
 
 class AssetResponse(BaseModel):
@@ -81,6 +88,7 @@ class ValidationCheck(BaseModel):
 class ValidationReport(BaseModel):
     auth_check: ValidationCheck | None = None
     duplicate_check: ValidationCheck | None = None
+    uri_unique_check: ValidationCheck | None = None
     name_reservation_check: ValidationCheck | None = None
     uri_reachable: ValidationCheck | None = None
     format_sniff: ValidationCheck | None = None

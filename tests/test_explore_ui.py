@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from unittest.mock import AsyncMock
 
 from cave_catalog.schemas import ValidationCheck, ValidationReport
@@ -30,7 +31,7 @@ async def _register(client, monkeypatch, **overrides) -> dict:
         "name": "test_table",
         "mat_version": 1078,
         "revision": 0,
-        "uri": "gs://bucket/path",
+        "uri": f"gs://bucket/{uuid.uuid4()}",
         "format": "delta",
         "asset_type": "table",
         "is_managed": True,

@@ -82,6 +82,12 @@ class Asset(Base):
             unique=True,
             postgresql_where=text("mat_version IS NULL"),
         ),
+        # URI must be globally unique across all assets
+        Index(
+            "assets_unique_uri",
+            "uri",
+            unique=True,
+        ),
     )
 
 

@@ -20,6 +20,7 @@ from cave_catalog.db.models import Table
 from cave_catalog.db.session import get_session
 from cave_catalog.extractors import get_extractor
 from cave_catalog.routers.helpers import (
+    find_by_uri,
     find_duplicate,
     get_asset,
     get_http_client,
@@ -108,6 +109,17 @@ async def register_table(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"message": "Table already exists", "existing_id": str(existing.id)},
+        )
+
+    # URI uniqueness check
+    uri_conflict = await find_by_uri(session, body.uri)
+    if uri_conflict is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "URI is already registered to another asset",
+                "existing_id": str(uri_conflict.id),
+            },
         )
 
     # Content validation pipeline

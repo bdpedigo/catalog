@@ -319,7 +319,7 @@ async def test_access_auth_enabled_no_permission_returns_403(
         _patch_validation(monkeypatch)
         reg = await c2.post(
             "/api/v1/assets/register",
-            json=_asset_payload(is_managed=False, name="auth-test-asset"),
+            json=_asset_payload(is_managed=False, name="auth_test_asset"),
         )
         assert reg.status_code == 201, reg.text
         new_id = reg.json()["id"]

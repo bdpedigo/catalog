@@ -20,6 +20,7 @@ from cave_catalog.db.models import Asset
 from cave_catalog.db.session import get_session
 from cave_catalog.routers.helpers import (
     asset_to_response,
+    find_by_uri,
     find_duplicate,
     get_asset,
     get_http_client,
@@ -37,7 +38,11 @@ from cave_catalog.schemas import (
     ValidationReport,
 )
 from cave_catalog.table_schemas import TableResponse
-from cave_catalog.validation import check_name_reservation as _check_name_reservation
+from cave_catalog.validation import (
+    check_name_reservation as _check_name_reservation,
+    validate_asset_name,
+    NAME_FORMAT_MESSAGE,
+)
 from cave_catalog.validation import run_validation_pipeline
 
 logger = structlog.get_logger()
@@ -76,6 +81,17 @@ async def register_asset(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"message": "Asset already exists", "existing_id": str(existing.id)},
+        )
+
+    # URI uniqueness check
+    uri_conflict = await find_by_uri(session, body.uri)
+    if uri_conflict is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "URI is already registered to another asset",
+                "existing_id": str(uri_conflict.id),
+            },
         )
 
     # Content validation pipeline
@@ -171,6 +187,17 @@ async def validate_asset(
     else:
         report.duplicate_check = ValidationCheck(passed=True)
 
+    # URI uniqueness check
+    uri_conflict = await find_by_uri(session, body.uri)
+    if uri_conflict is not None:
+        report.uri_unique_check = ValidationCheck(
+            passed=False,
+            message="URI is already registered to another asset",
+            existing_id=uri_conflict.id,
+        )
+    else:
+        report.uri_unique_check = ValidationCheck(passed=True)
+
     # Content validation
     content_report = await run_validation_pipeline(
         datastack=body.datastack,
@@ -203,6 +230,12 @@ async def check_name(
     user: AuthUser = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    # 0. Check name format
+    try:
+        validate_asset_name(name)
+    except ValueError as exc:
+        return {"available": False, "reason": "invalid_format", "message": str(exc)}
+
     # 1. Check name reservation against mat tables
     reservation = await _check_name_reservation(
         datastack=datastack,
@@ -223,6 +256,27 @@ async def check_name(
             "existing_id": str(existing.id),
         }
 
+    return {"available": True}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/assets/check-uri
+# ---------------------------------------------------------------------------
+
+
+@router.get("/check-uri")
+async def check_uri(
+    uri: str = Query(...),
+    user: AuthUser = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    existing = await find_by_uri(session, uri)
+    if existing is not None:
+        return {
+            "available": False,
+            "reason": "duplicate_uri",
+            "existing_id": str(existing.id),
+        }
     return {"available": True}
 
 

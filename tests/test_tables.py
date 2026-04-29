@@ -5,6 +5,7 @@ Phase 4 tests — covers tasks 4.1–4.8.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -16,7 +17,6 @@ from cave_catalog.table_schemas import (
     TableMetadata,
     merge_columns,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -40,7 +40,7 @@ def _table_payload(**overrides: Any) -> dict:
         "datastack": "minnie65_public",
         "name": "my_table",
         "revision": 0,
-        "uri": "gs://bucket/tables/my_table/",
+        "uri": f"gs://bucket/tables/{uuid.uuid4()}/",
         "format": "delta",
         "is_managed": True,
         "mutability": "static",

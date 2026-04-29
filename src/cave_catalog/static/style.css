@@ -204,6 +204,9 @@ th {
   font-size: 13px;
   padding: 2px 0;
 }
+.indicator:empty {
+  display: none;
+}
 
 /* Alert / message boxes */
 .alert {

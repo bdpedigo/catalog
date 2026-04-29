@@ -162,6 +162,16 @@ async def find_duplicate(
     return result.scalar_one_or_none()
 
 
+async def find_by_uri(
+    session: AsyncSession,
+    uri: str,
+) -> Asset | None:
+    """Find an existing asset with the same URI."""
+    stmt = select(Asset).where(Asset.uri == uri)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 # ---------------------------------------------------------------------------
 # Validation helpers
 # ---------------------------------------------------------------------------

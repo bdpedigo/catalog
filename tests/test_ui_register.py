@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-
 from cave_catalog.schemas import ValidationCheck, ValidationReport
 from cave_catalog.table_schemas import ColumnInfo, TableMetadata
 
@@ -145,3 +144,53 @@ class TestRegisterSubmit:
         assert resp.status_code == 200
         # Should show an error message
         assert "failed" in resp.text.lower() or "error" in resp.text.lower()
+
+
+class TestSchemaFormSync:
+    """Ensure the registration form stays in sync with the TableRequest schema.
+
+    If a new field is added to TableRequest and not accounted for here, this
+    test will fail with a clear message about what needs to be added.
+    """
+
+    def test_all_table_request_fields_accounted_for(self):
+        from cave_catalog.table_schemas import TableRequest
+
+        # Fields that appear in the registration form (user-editable)
+        form_fields = {
+            "uri",
+            "format",
+            "name",
+            "mat_version",
+            "revision",
+            "mutability",
+            "maturity",
+            "is_managed",
+            "access_group",
+            "expires_at",
+            "properties",
+            "column_annotations",
+        }
+
+        # Fields that are auto-determined (not on the form)
+        auto_fields = {
+            "datastack",  # from global selector / cookie
+            "asset_type",  # always "table"
+            "source",  # always "user" for UI registration
+        }
+
+        all_schema_fields = set(TableRequest.model_fields.keys())
+        accounted_fields = form_fields | auto_fields
+
+        missing = all_schema_fields - accounted_fields
+        extra = accounted_fields - all_schema_fields
+
+        assert not missing, (
+            f"TableRequest has fields not accounted for in the registration form "
+            f"or auto_fields list: {missing}. Add them to the form (form_fields) "
+            f"or mark them as auto-determined (auto_fields) in this test."
+        )
+        assert not extra, (
+            f"The form/auto_fields lists reference fields not in TableRequest: "
+            f"{extra}. Remove them or update the schema."
+        )

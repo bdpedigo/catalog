@@ -24,9 +24,10 @@ from cave_catalog.mat_proxy import (
     get_target_columns,
     warm_cache,
 )
-from cave_catalog.routers.helpers import find_duplicate, get_http_client
+from cave_catalog.routers.helpers import find_by_uri, find_duplicate, get_http_client
+from cave_catalog.schemas import Maturity, Mutability
 from cave_catalog.templating import templates
-from cave_catalog.validation import check_name_reservation
+from cave_catalog.validation import check_name_reservation, validate_asset_name
 
 router = APIRouter(prefix="/ui", tags=["ui"])
 
@@ -151,10 +152,13 @@ async def register_page(
     datastack = _get_current_datastack(request, settings)
     if datastack:
         asyncio.create_task(warm_cache(datastack))
+    context = _page_context(request, user, settings, "register")
+    context["mutability_options"] = [v.value for v in Mutability]
+    context["maturity_options"] = [v.value for v in Maturity]
     return templates.TemplateResponse(
         request,
         "register.html",
-        _page_context(request, user, settings, "register"),
+        context,
     )
 
 
@@ -588,6 +592,25 @@ async def register_submit(
     mat_version_raw = str(form.get("mat_version", "")).strip()
     mat_version = int(mat_version_raw) if mat_version_raw else None
 
+    revision_raw = str(form.get("revision", "0")).strip()
+    revision = int(revision_raw) if revision_raw else 0
+
+    mutability = str(form.get("mutability", "static")).strip()
+    maturity = str(form.get("maturity", "stable")).strip()
+    is_managed = form.get("is_managed") == "true"
+    access_group = str(form.get("access_group", "")).strip() or None
+
+    expires_at_raw = str(form.get("expires_at", "")).strip()
+    expires_at = expires_at_raw if expires_at_raw else None
+
+    properties_raw = str(form.get("properties", "{}")).strip()
+    try:
+        import json
+
+        properties = json.loads(properties_raw) if properties_raw else {}
+    except (json.JSONDecodeError, ValueError):
+        properties = {}
+
     column_annotations = _parse_column_annotations(form)
 
     # Build the request payload for the tables API
@@ -596,14 +619,16 @@ async def register_submit(
         "datastack": datastack,
         "name": name,
         "mat_version": mat_version,
-        "revision": 0,
+        "revision": revision,
         "uri": uri,
         "format": fmt,
         "asset_type": "table",
-        "is_managed": True,
-        "mutability": "static",
-        "maturity": "stable",
-        "properties": {},
+        "is_managed": is_managed,
+        "mutability": mutability,
+        "maturity": maturity,
+        "properties": properties,
+        "access_group": access_group,
+        "expires_at": expires_at,
         "column_annotations": column_annotations,
     }
 
@@ -721,6 +746,14 @@ async def check_name_fragment(
     if not name:
         return HTMLResponse("")
 
+    # Check name format
+    try:
+        validate_asset_name(name)
+    except ValueError as exc:
+        return HTMLResponse(
+            f'<span class="name-check unavailable">&#10007; {exc}</span>'
+        )
+
     datastack = _get_current_datastack(request, settings)
     if not datastack:
         return HTMLResponse(
@@ -748,3 +781,24 @@ async def check_name_fragment(
         )
 
     return HTMLResponse('<span class="name-check available">&#10003; Available</span>')
+
+
+@router.get("/fragments/check-uri", response_class=HTMLResponse)
+async def check_uri_fragment(
+    request: Request,
+    uri: str = Query(""),
+    user: AuthUser = Depends(require_ui_auth),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return HTML fragment with ✓/✗ URI uniqueness indicator."""
+    uri = uri.strip()
+    if not uri:
+        return HTMLResponse("")
+
+    existing = await find_by_uri(session, uri)
+    if existing is not None:
+        return HTMLResponse(
+            f'<span class="name-check unavailable">&#10007; URI already registered (ID: {existing.id})</span>'
+        )
+
+    return HTMLResponse('<span class="name-check available">&#10003; URI available</span>')

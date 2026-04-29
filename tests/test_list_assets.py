@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -18,7 +19,7 @@ def _asset_payload(**overrides: Any) -> dict:
         "name": "synapses",
         "mat_version": 943,
         "revision": 0,
-        "uri": "gs://bucket/minnie65/synapses/",
+        "uri": f"gs://bucket/minnie65/{uuid.uuid4()}/",
         "format": "delta",
         "asset_type": "table",
         "is_managed": True,

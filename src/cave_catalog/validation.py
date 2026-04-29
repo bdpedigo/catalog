@@ -8,6 +8,7 @@ POST /validate so all checks stay in one place.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +22,49 @@ from cave_catalog.config import get_settings
 from cave_catalog.schemas import ValidationCheck, ValidationReport
 
 logger = structlog.get_logger()
+
+# --- Name format validation -------------------------------------------------
+
+_NAME_SEGMENT_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+NAME_FORMAT_MESSAGE = (
+    "Name must be lowercase alphanumeric with underscores only "
+    "(e.g. 'my_table', 'synapses_v4'). "
+    "Each segment must start with a letter. "
+    "Layout suffixes (dot-separated) follow the same rules."
+)
+
+
+def validate_asset_name(name: str) -> str:
+    """Validate that *name* follows snake_case format.
+
+    Allows an optional dot-separated layout suffix (e.g. ``synapses.by_pre_root``).
+    Each segment must match ``^[a-z][a-z0-9_]*$``.
+
+    Returns the name unchanged if valid; raises ``ValueError`` otherwise.
+    """
+    if not name:
+        raise ValueError("Name must not be empty.")
+
+    segments = name.split(".")
+    if len(segments) > 2:
+        raise ValueError(
+            f"Name '{name}' has too many dot-separated segments (max 2). "
+            + NAME_FORMAT_MESSAGE
+        )
+
+    for segment in segments:
+        if not segment:
+            raise ValueError(
+                f"Name '{name}' has an empty segment. " + NAME_FORMAT_MESSAGE
+            )
+        if not _NAME_SEGMENT_RE.match(segment):
+            raise ValueError(
+                f"Name segment '{segment}' is invalid. " + NAME_FORMAT_MESSAGE
+            )
+
+    return name
+
 
 # --- Format sniffers --------------------------------------------------------
 

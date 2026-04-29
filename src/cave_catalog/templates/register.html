@@ -11,7 +11,13 @@
 
     <div class="form-group">
       <label for="uri">Cloud Storage URI</label>
-      <input type="text" id="uri" name="uri" placeholder="gs://bucket/path/to/table/" required>
+      <input type="text" id="uri" name="uri" placeholder="gs://bucket/path/to/table/" required
+             hx-get="/ui/fragments/check-uri"
+             hx-trigger="blur changed"
+             hx-target="#uri-check-result"
+             hx-include="#uri"
+             hx-swap="innerHTML">
+      <div id="uri-check-result" class="indicator"></div>
     </div>
 
     <div class="form-row">
@@ -48,23 +54,69 @@
     <section class="form-section">
       <h2>2. Table Details</h2>
 
-      <div class="form-row">
-        <div class="form-group" style="flex: 1;">
-          <label for="table-name">Table Name</label>
-          <input type="text" id="table-name" name="name" required
-                 hx-get="/ui/fragments/check-name"
-                 hx-trigger="blur changed"
-                 hx-target="#name-check-result"
-                 hx-include="#table-name"
-                 hx-swap="innerHTML"
-                 placeholder="e.g., my_synapse_predictions">
-          <div id="name-check-result" class="indicator"></div>
-        </div>
-        <div class="form-group" style="flex: 0 0 160px;">
-          <label for="mat-version">Mat Version <span class="text-muted">(optional)</span></label>
-          <input type="number" id="mat-version" name="mat_version" placeholder="e.g., 943">
-        </div>
+      <div class="form-group">
+        <label for="table-name">Table Name</label>
+        <input type="text" id="table-name" name="name" required
+               hx-get="/ui/fragments/check-name"
+               hx-trigger="blur changed"
+               hx-target="#name-check-result"
+               hx-include="#table-name"
+               hx-swap="innerHTML"
+               placeholder="e.g., my_synapse_predictions">
+        <div id="name-check-result" class="indicator"></div>
       </div>
+
+      <div class="form-group">
+        <label for="mat-version">Mat Version <span class="text-muted">(optional)</span></label>
+        <input type="number" id="mat-version" name="mat_version" placeholder="e.g., 943">
+      </div>
+
+      <div class="form-group">
+        <label for="revision">Revision</label>
+        <input type="number" id="revision" name="revision" value="0" min="0">
+      </div>
+
+      <div class="form-group">
+        <label for="mutability">Mutability</label>
+        <select id="mutability" name="mutability">
+          {% for value in mutability_options %}
+          <option value="{{ value }}" {{ "selected" if value == "static" else "" }}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="maturity">Maturity</label>
+        <select id="maturity" name="maturity">
+          {% for value in maturity_options %}
+          <option value="{{ value }}" {{ "selected" if value == "stable" else "" }}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="is-managed">
+          <input type="checkbox" id="is-managed" name="is_managed" value="true" checked>
+          Managed
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label for="access-group">Access Group <span class="text-muted">(optional)</span></label>
+        <input type="text" id="access-group" name="access_group" placeholder="e.g., team-neuroscience">
+      </div>
+
+      <div class="form-group">
+        <label for="expires-at">Expires At <span class="text-muted">(optional)</span></label>
+        <input type="datetime-local" id="expires-at" name="expires_at">
+      </div>
+
+      <details class="form-section-details">
+        <summary>Advanced: Properties <span class="text-muted">(optional JSON)</span></summary>
+        <div class="form-group">
+          <textarea id="properties" name="properties" rows="3" placeholder='{"key": "value"}'>{}</textarea>
+        </div>
+      </details>
     </section>
 
     {# ── Step 3: Column annotations (populated by preview) ── #}
