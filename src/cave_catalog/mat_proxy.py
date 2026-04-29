@@ -80,9 +80,7 @@ def _sync_get_table_columns(
     metadata = client.materialize.get_table_metadata(table_name)
     schema_type = metadata.get("schema_type") or metadata.get("schema")
     if not schema_type:
-        raise MatProxyError(
-            f"Could not determine schema type for table '{table_name}'"
-        )
+        raise MatProxyError(f"Could not determine schema type for table '{table_name}'")
     schema_def = client.schema.schema_definition(schema_type)
     # schema_def is a JSON Schema; resolve top-level $ref then read "properties"
     resolved = schema_def
@@ -176,9 +174,7 @@ async def get_target_columns(
     except MatProxyError:
         raise
     except Exception as e:
-        logger.exception(
-            "Failed to fetch columns for %s/%s", datastack, target_name
-        )
+        logger.exception("Failed to fetch columns for %s/%s", datastack, target_name)
         raise MatProxyError(f"Failed to fetch columns for '{target_name}': {e}") from e
     _columns_cache[cache_key] = columns
     return columns

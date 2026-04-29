@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
 
 from cave_catalog.schemas import ValidationCheck, ValidationReport
 from cave_catalog.table_schemas import ColumnInfo, TableMetadata
@@ -94,7 +93,11 @@ class TestRegisterSubmit:
             cookies={"cave_catalog_datastack": "minnie65_public"},
         )
         assert resp.status_code == 200
-        assert "successfully" in resp.text.lower() or "register_success" in resp.url.path if hasattr(resp, 'url') else True
+        assert (
+            "successfully" in resp.text.lower() or "register_success" in resp.url.path
+            if hasattr(resp, "url")
+            else True
+        )
         assert "test_table" in resp.text
 
     async def test_missing_fields(self, client, monkeypatch):

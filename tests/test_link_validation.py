@@ -7,10 +7,7 @@ Uses httpx mocking to simulate ME API responses.
 from __future__ import annotations
 
 import httpx
-import pytest
 from cave_catalog.validation import (
-    LinkValidationError,
-    LinkValidationResult,
     validate_column_links,
 )
 
@@ -32,8 +29,7 @@ def _annotations_with_links(*links: tuple[str, str, str, str]) -> list[dict]:
             }
         )
     return [
-        {"column_name": col, "links": col_links}
-        for col, col_links in by_col.items()
+        {"column_name": col, "links": col_links} for col, col_links in by_col.items()
     ]
 
 

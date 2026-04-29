@@ -133,9 +133,7 @@ class TestGetTargetColumns:
             },
             "$ref": "#/definitions/SynapseSchema",
         }
-        result = await get_target_columns(
-            "minnie65_phase3", "synapses", "table"
-        )
+        result = await get_target_columns("minnie65_phase3", "synapses", "table")
         assert len(result) == 2
         assert result[0]["name"] == "pre_pt"
 
@@ -144,9 +142,7 @@ class TestGetTargetColumns:
             "id": "integer",
             "cell_type": "string",
         }
-        result = await get_target_columns(
-            "minnie65_phase3", "cell_type_view", "view"
-        )
+        result = await get_target_columns("minnie65_phase3", "cell_type_view", "view")
         assert len(result) == 2
         col_names = [c["name"] for c in result]
         assert "id" in col_names

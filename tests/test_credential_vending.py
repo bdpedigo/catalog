@@ -103,7 +103,6 @@ def test_parse_gcs_uri_rejects_unsafe_prefix():
 
 def test_build_downscoped_credentials_sets_bucket_and_prefix():
     from cave_catalog.credentials.gcs import _build_downscoped_credentials
-    from google.auth import downscoped
 
     source = MagicMock()
     constructed_creds = MagicMock()

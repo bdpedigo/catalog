@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
 import pytest_asyncio
 from cave_catalog.db.models import Asset, Base, Table
 from cave_catalog.table_schemas import (
@@ -139,7 +138,13 @@ async def test_unknown_asset_type_loads_as_base(db_session):
 async def test_table_with_cached_metadata(db_session):
     """Table-specific JSONB fields round-trip through the DB."""
     now = datetime.now(timezone.utc)
-    meta = {"n_rows": 1000, "n_columns": 5, "n_bytes": 50000, "columns": [], "partition_columns": []}
+    meta = {
+        "n_rows": 1000,
+        "n_columns": 5,
+        "n_bytes": 50000,
+        "columns": [],
+        "partition_columns": [],
+    }
     annotations = [{"column_name": "pt_root_id", "description": "Root ID", "links": []}]
 
     table = Table(
@@ -215,7 +220,10 @@ def test_table_metadata_full():
         n_rows=100,
         n_columns=3,
         n_bytes=5000,
-        columns=[ColumnInfo(name="a", dtype="int64"), ColumnInfo(name="b", dtype="string")],
+        columns=[
+            ColumnInfo(name="a", dtype="int64"),
+            ColumnInfo(name="b", dtype="string"),
+        ],
         partition_columns=["a"],
     )
     assert meta.n_rows == 100

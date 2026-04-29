@@ -194,7 +194,9 @@ async def preview_table(
         return templates.TemplateResponse(
             request,
             "fragments/preview_result.html",
-            {"error": f"Unsupported format: '{fmt}'. Supported formats: delta, parquet."},
+            {
+                "error": f"Unsupported format: '{fmt}'. Supported formats: delta, parquet."
+            },
         )
 
     # Run extraction
@@ -293,7 +295,6 @@ async def register_submit(
     column_annotations = _parse_column_annotations(form)
 
     # Build the request payload for the tables API
-    import httpx
 
     payload = {
         "datastack": datastack,
@@ -450,6 +451,4 @@ async def check_name_fragment(
             f'<span class="name-check unavailable">&#10007; Already registered (ID: {existing.id})</span>'
         )
 
-    return HTMLResponse(
-        '<span class="name-check available">&#10003; Available</span>'
-    )
+    return HTMLResponse('<span class="name-check available">&#10003; Available</span>')

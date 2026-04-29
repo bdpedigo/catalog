@@ -5,11 +5,9 @@ Phase 4 tests — covers tasks 4.1–4.8.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
-import pytest
 from cave_catalog.table_schemas import (
     ColumnAnnotation,
     ColumnInfo,
@@ -213,9 +211,7 @@ async def test_register_table_with_annotations(client, monkeypatch):
     annotations = [
         {"column_name": "a", "description": "Col A", "links": []},
     ]
-    data = await _register_table(
-        client, monkeypatch, column_annotations=annotations
-    )
+    data = await _register_table(client, monkeypatch, column_annotations=annotations)
 
     assert data["column_annotations"][0]["column_name"] == "a"
     # Merged column should have the annotation
@@ -398,7 +394,9 @@ async def test_refresh_preserves_annotations(client, monkeypatch):
     table = await _register_table(
         client,
         monkeypatch,
-        column_annotations=[{"column_name": "a", "description": "Keep me", "links": []}],
+        column_annotations=[
+            {"column_name": "a", "description": "Keep me", "links": []}
+        ],
     )
     table_id = table["id"]
 
@@ -467,14 +465,10 @@ async def test_list_tables_returns_tables(client, monkeypatch):
 async def test_list_tables_filters_by_format(client, monkeypatch):
     await _register_table(client, monkeypatch, name="delta_table", format="delta")
 
-    resp = await client.get(
-        "/api/v1/tables/?datastack=minnie65_public&format=parquet"
-    )
+    resp = await client.get("/api/v1/tables/?datastack=minnie65_public&format=parquet")
     assert resp.json() == []
 
-    resp2 = await client.get(
-        "/api/v1/tables/?datastack=minnie65_public&format=delta"
-    )
+    resp2 = await client.get("/api/v1/tables/?datastack=minnie65_public&format=delta")
     assert len(resp2.json()) == 1
 
 

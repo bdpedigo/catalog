@@ -280,7 +280,9 @@ async def validate_column_links(
 
     settings = get_settings()
     if not settings.mat_engine_url:
-        logger.warning("link_validation_skipped", reason="MAT_ENGINE_URL not configured")
+        logger.warning(
+            "link_validation_skipped", reason="MAT_ENGINE_URL not configured"
+        )
         return LinkValidationResult(
             passed=True,
             skipped=True,

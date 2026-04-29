@@ -395,9 +395,7 @@ async def test_list_assets_mixed_types(client, monkeypatch):
     await _register(client, monkeypatch, name="plain_asset", asset_type="asset")
 
     # Register a table
-    await _register_table_via_tables_api(
-        client, monkeypatch, name="table_asset"
-    )
+    await _register_table_via_tables_api(client, monkeypatch, name="table_asset")
 
     response = await client.get("/api/v1/assets/?datastack=minnie65_public")
     assert response.status_code == 200

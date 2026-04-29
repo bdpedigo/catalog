@@ -141,13 +141,10 @@ class ParquetMetadataExtractor(MetadataExtractor):
         if storage_options:
             kwargs["storage_options"] = storage_options
 
-        lf = await asyncio.to_thread(
-            lambda: pl.scan_parquet(uri, **kwargs)
-        )
+        lf = await asyncio.to_thread(lambda: pl.scan_parquet(uri, **kwargs))
         schema = await asyncio.to_thread(lambda: lf.collect_schema())
         columns = [
-            ColumnInfo(name=name, dtype=str(dtype))
-            for name, dtype in schema.items()
+            ColumnInfo(name=name, dtype=str(dtype)) for name, dtype in schema.items()
         ]
 
         # Get on-disk size via fsspec and row count from parquet metadata

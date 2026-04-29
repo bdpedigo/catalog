@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
-import pytest
 
 from cave_catalog.table_schemas import ColumnInfo, TableMetadata
 

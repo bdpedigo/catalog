@@ -37,9 +37,9 @@ def delta_table(tmp_path) -> str:
 @pytest.fixture
 def partitioned_delta(tmp_path) -> str:
     path = tmp_path / "partitioned_delta"
-    pl.DataFrame(
-        {"part": ["x", "x", "y"], "val": [1, 2, 3]}
-    ).write_delta(str(path), delta_write_options={"partition_by": ["part"]})
+    pl.DataFrame({"part": ["x", "x", "y"], "val": [1, 2, 3]}).write_delta(
+        str(path), delta_write_options={"partition_by": ["part"]}
+    )
     return str(path)
 
 

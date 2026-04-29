@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
 
 from cave_catalog.schemas import ValidationCheck
 
@@ -68,9 +67,7 @@ class TestCheckNameAPI:
         """Name that matches a mat table returns reserved."""
         monkeypatch.setattr(
             "cave_catalog.routers.assets._check_name_reservation",
-            AsyncMock(
-                return_value=ValidationCheck(passed=False, message="reserved")
-            ),
+            AsyncMock(return_value=ValidationCheck(passed=False, message="reserved")),
         )
         resp = await client.get(
             "/api/v1/assets/check-name",
@@ -159,9 +156,7 @@ class TestCheckNameFragment:
 
         monkeypatch.setattr(
             "cave_catalog.routers.ui.check_name_reservation",
-            AsyncMock(
-                return_value=ValidationCheck(passed=False, message="reserved")
-            ),
+            AsyncMock(return_value=ValidationCheck(passed=False, message="reserved")),
         )
         resp = await client.get(
             "/ui/fragments/check-name",
