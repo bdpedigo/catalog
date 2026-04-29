@@ -406,7 +406,7 @@ async def target_columns_fragment(
         return HTMLResponse(f'<option value="">Error: {e}</option>')
     options = ['<option value="">-- Select column --</option>']
     for col in columns:
-        options.append(f'<option value="{col["name"]}">{col["name"]}</option>')
+        options.append(f'<option value="{col}">{col}</option>')
     return HTMLResponse("\n".join(options))
 
 

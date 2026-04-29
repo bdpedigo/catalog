@@ -17,14 +17,8 @@ logger = logging.getLogger(__name__)
 _CACHE_TTL = 300  # 5 minutes
 _CACHE_MAXSIZE = 256
 
-# Caches keyed by (datastack, version) or (datastack, version, target_name)
-_tables_cache: TTLCache[tuple[str, int | None], list[str]] = TTLCache(
-    maxsize=_CACHE_MAXSIZE, ttl=_CACHE_TTL
-)
-_views_cache: TTLCache[tuple[str, int | None], list[str]] = TTLCache(
-    maxsize=_CACHE_MAXSIZE, ttl=_CACHE_TTL
-)
-_columns_cache: TTLCache[tuple[str, int | None, str, str], list[dict]] = TTLCache(
+# Cache CAVEclient instances so that built-in .tables/.views memoization persists
+_client_cache: TTLCache[tuple[str, int | None], CAVEclient] = TTLCache(
     maxsize=_CACHE_MAXSIZE, ttl=_CACHE_TTL
 )
 
@@ -40,7 +34,10 @@ class LinkableTarget:
 
 
 def _get_cave_client(datastack: str, version: int | None = None) -> CAVEclient:
-    """Create a CAVEclient instance with the service token."""
+    """Get or create a cached CAVEclient instance with the service token."""
+    cache_key = (datastack, version)
+    if cache_key in _client_cache:
+        return _client_cache[cache_key]
     settings = get_settings()
     if not settings.cave_token:
         raise MatProxyError(
@@ -54,65 +51,51 @@ def _get_cave_client(datastack: str, version: int | None = None) -> CAVEclient:
         kwargs["server_address"] = settings.caveclient_server_address
     if version is not None:
         kwargs["version"] = version
-    return CAVEclient(**kwargs)
+    client = CAVEclient(**kwargs)
+    _client_cache[cache_key] = client
+    return client
 
 
 def _sync_get_tables(datastack: str, version: int | None = None) -> list[str]:
-    """Synchronous: fetch table list via CAVEclient."""
+    """Synchronous: fetch table list via cached CAVEclient."""
     client = _get_cave_client(datastack, version)
-    return client.materialize.get_tables()
+    return list(client.materialize.tables.table_names)
 
 
 def _sync_get_views(datastack: str, version: int | None = None) -> list[str]:
-    """Synchronous: fetch view list via CAVEclient."""
+    """Synchronous: fetch view list via cached CAVEclient."""
     client = _get_cave_client(datastack, version)
-    return client.materialize.get_views()
+    return list(client.materialize.views.table_names)
+
+
+def _strip_bbox_suffix(fields: list[str]) -> list[str]:
+    """Strip '_bbox' suffix from field names (materialization spatial filter fields)."""
+    return [name[:-5] if name.endswith("_bbox") else name for name in fields]
 
 
 def _sync_get_table_columns(
     datastack: str, table_name: str, version: int | None = None
-) -> list[dict]:
-    """Synchronous: resolve columns for a materialization table.
-
-    Path: get_table_metadata() → schema_type → schema_definition() → columns.
-    """
+) -> list[str]:
+    """Synchronous: resolve columns for a materialization table via .fields API."""
     client = _get_cave_client(datastack, version)
-    metadata = client.materialize.get_table_metadata(table_name)
-    schema_type = metadata.get("schema_type") or metadata.get("schema")
-    if not schema_type:
-        raise MatProxyError(f"Could not determine schema type for table '{table_name}'")
-    schema_def = client.schema.schema_definition(schema_type)
-    # schema_def is a JSON Schema; resolve top-level $ref then read "properties"
-    resolved = schema_def
-    ref = schema_def.get("$ref", "")
-    if ref.startswith("#/definitions/"):
-        def_name = ref.split("/")[-1]
-        resolved = schema_def.get("definitions", {}).get(def_name, schema_def)
-    properties = resolved.get("properties", resolved)
-    columns = []
-    for col_name, col_info in properties.items():
-        columns.append({"name": col_name, "type": str(col_info)})
-    return columns
+    fields = client.materialize.tables[table_name].fields
+    return _strip_bbox_suffix(fields)
 
 
 def _sync_get_view_columns(
     datastack: str, view_name: str, version: int | None = None
-) -> list[dict]:
-    """Synchronous: resolve columns for a materialization view."""
+) -> list[str]:
+    """Synchronous: resolve columns for a materialization view via .fields API."""
     client = _get_cave_client(datastack, version)
-    schema = client.materialize.get_view_schema(view_name)
-    # schema is a dict with column names → type info
-    columns = []
-    for col_name, col_info in schema.items():
-        columns.append({"name": col_name, "type": str(col_info)})
-    return columns
+    fields = client.materialize.views[view_name].fields
+    return _strip_bbox_suffix(fields)
 
 
 async def get_mat_tables(datastack: str, version: int | None = None) -> list[str]:
-    """Get materialization tables for a datastack (cached)."""
-    cache_key = (datastack, version)
-    if cache_key in _tables_cache:
-        return _tables_cache[cache_key]
+    """Get materialization tables for a datastack.
+
+    Leverages cached client instance — .tables property is memoized internally.
+    """
     try:
         tables = await asyncio.to_thread(_sync_get_tables, datastack, version)
     except MatProxyError:
@@ -120,15 +103,14 @@ async def get_mat_tables(datastack: str, version: int | None = None) -> list[str
     except Exception as e:
         logger.exception("Failed to fetch mat tables for %s", datastack)
         raise MatProxyError(f"Failed to fetch tables: {e}") from e
-    _tables_cache[cache_key] = tables
     return tables
 
 
 async def get_mat_views(datastack: str, version: int | None = None) -> list[str]:
-    """Get materialization views for a datastack (cached)."""
-    cache_key = (datastack, version)
-    if cache_key in _views_cache:
-        return _views_cache[cache_key]
+    """Get materialization views for a datastack.
+
+    Leverages cached client instance — .views property is memoized internally.
+    """
     try:
         views = await asyncio.to_thread(_sync_get_views, datastack, version)
     except MatProxyError:
@@ -136,7 +118,6 @@ async def get_mat_views(datastack: str, version: int | None = None) -> list[str]
     except Exception as e:
         logger.exception("Failed to fetch mat views for %s", datastack)
         raise MatProxyError(f"Failed to fetch views: {e}") from e
-    _views_cache[cache_key] = views
     return views
 
 
@@ -157,11 +138,12 @@ async def get_target_columns(
     target_name: str,
     target_type: str,
     version: int | None = None,
-) -> list[dict]:
-    """Get columns for a linkable target (table or view), cached."""
-    cache_key = (datastack, version, target_name, target_type)
-    if cache_key in _columns_cache:
-        return _columns_cache[cache_key]
+) -> list[str]:
+    """Get columns for a linkable target (table or view).
+
+    Leverages CAVEclient's built-in caching via cached client instances
+    and the .tables/.views property memoization.
+    """
     try:
         if target_type == "view":
             columns = await asyncio.to_thread(
@@ -176,5 +158,4 @@ async def get_target_columns(
     except Exception as e:
         logger.exception("Failed to fetch columns for %s/%s", datastack, target_name)
         raise MatProxyError(f"Failed to fetch columns for '{target_name}': {e}") from e
-    _columns_cache[cache_key] = columns
     return columns
