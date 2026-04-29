@@ -6,8 +6,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cave_catalog.auth.middleware import (
-    AuthUser,
     TOKEN_COOKIE_NAME,
+    AuthUser,
     create_token_cookie_response,
     get_authorize_url,
     get_current_user,
@@ -15,6 +15,7 @@ from cave_catalog.auth.middleware import (
 from cave_catalog.config import Settings, get_settings
 from cave_catalog.db.session import get_session
 from cave_catalog.extractors import get_extractor
+from cave_catalog.field_registry import ASSET_FIELDS, get_default_fields
 from cave_catalog.mat_proxy import (
     MatProxyError,
     get_linkable_targets,
@@ -157,11 +158,300 @@ async def explore_page(
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
 ):
+    datastack = _get_current_datastack(request, settings)
+    fields = ASSET_FIELDS
+    default_fields = get_default_fields()
+    visible_columns = [f.key for f in default_fields]
+
+    # Fetch initial page of assets
+    limit = 25
+    assets, total = await _fetch_assets(request, user, datastack, limit=limit)
+
+    ctx = _page_context(request, user, settings, "explore")
+    ctx.update(
+        {
+            "fields": fields,
+            "visible_columns": visible_columns,
+            "assets": assets,
+            "total": total,
+            "limit": limit,
+            "offset": 0,
+            "sort_by": "name",
+            "sort_order": "asc",
+            "filters": {},
+        }
+    )
+    return templates.TemplateResponse(request, "explore.html", ctx)
+
+
+@router.get("/fragments/assets", response_class=HTMLResponse)
+async def explore_assets_fragment(
+    request: Request,
+    user: AuthUser = Depends(require_ui_auth),
+    settings: Settings = Depends(get_settings),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    sort_by: str = Query(default="name"),
+    sort_order: str = Query(default="asc"),
+    # Filters
+    name: str = Query(default=""),
+    format: str = Query(default=""),
+    maturity: str = Query(default=""),
+    mat_version: str = Query(default=""),
+    asset_type: str = Query(default=""),
+    mutability: str = Query(default=""),
+    source: str = Query(default=""),
+):
+    datastack = _get_current_datastack(request, settings)
+
+    # Build filter params for API call
+    filters = {}
+    if name:
+        filters["name_contains"] = name
+    if format:
+        filters["format"] = format
+    if maturity:
+        filters["maturity"] = maturity
+    if mat_version:
+        filters["mat_version"] = mat_version
+    if asset_type:
+        filters["asset_type"] = asset_type
+    if mutability:
+        filters["mutability"] = mutability
+    if source:
+        filters["source"] = source
+
+    assets, total = await _fetch_assets(
+        request,
+        user,
+        datastack,
+        limit=limit,
+        offset=offset,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        **filters,
+    )
+
     return templates.TemplateResponse(
         request,
-        "explore.html",
-        _page_context(request, user, settings, "explore"),
+        "fragments/asset_table.html",
+        {
+            "fields": ASSET_FIELDS,
+            "assets": assets,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        },
     )
+
+
+async def _fetch_assets(
+    request: Request,
+    user: AuthUser,
+    datastack: str | None,
+    *,
+    limit: int = 25,
+    offset: int = 0,
+    sort_by: str = "name",
+    sort_order: str = "asc",
+    **filters,
+) -> tuple[list[dict], int]:
+    """Fetch assets from the internal API via ASGI transport."""
+    if not datastack:
+        return [], 0
+
+    params = {
+        "datastack": datastack,
+        "limit": limit,
+        "offset": offset,
+        "sort_by": sort_by,
+        "sort_order": sort_order,
+    }
+    params.update(filters)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=request.app),
+        base_url="http://localhost",
+    ) as client:
+        resp = await client.get(
+            "/api/v1/assets/",
+            params=params,
+            headers={"Authorization": f"Bearer {user.token}"},
+        )
+
+    if resp.status_code != 200:
+        return [], 0
+
+    total = int(resp.headers.get("X-Total-Count", 0))
+    assets = resp.json()
+    return assets, total
+
+
+# ---------------------------------------------------------------------------
+# Asset detail page
+# ---------------------------------------------------------------------------
+
+
+@router.get("/explore/{asset_id}", response_class=HTMLResponse)
+async def explore_detail_page(
+    asset_id: str,
+    request: Request,
+    user: AuthUser = Depends(require_ui_auth),
+    settings: Settings = Depends(get_settings),
+):
+    asset = await _fetch_asset(request, asset_id, user)
+    ctx = _page_context(request, user, settings, "explore")
+    ctx["asset"] = asset
+    return templates.TemplateResponse(request, "explore_detail.html", ctx)
+
+
+# ---------------------------------------------------------------------------
+# Asset edit page
+# ---------------------------------------------------------------------------
+
+
+@router.get("/explore/{asset_id}/edit", response_class=HTMLResponse)
+async def explore_edit_page(
+    asset_id: str,
+    request: Request,
+    user: AuthUser = Depends(require_ui_auth),
+    settings: Settings = Depends(get_settings),
+):
+    asset = await _fetch_asset(request, asset_id, user)
+    ctx = _page_context(request, user, settings, "explore")
+    ctx["asset"] = asset
+    ctx["error"] = None
+    return templates.TemplateResponse(request, "explore_edit.html", ctx)
+
+
+@router.post("/explore/{asset_id}/edit", response_class=HTMLResponse)
+async def explore_edit_submit(
+    asset_id: str,
+    request: Request,
+    user: AuthUser = Depends(require_ui_auth),
+    settings: Settings = Depends(get_settings),
+):
+    form = await request.form()
+
+    # Build PATCH payload for mutable fields
+    patch_body: dict = {}
+    maturity = form.get("maturity")
+    if maturity:
+        patch_body["maturity"] = maturity
+    access_group = form.get("access_group", "").strip()
+    patch_body["access_group"] = access_group if access_group else None
+    expires_at = form.get("expires_at", "").strip()
+    patch_body["expires_at"] = expires_at if expires_at else None
+
+    # Build annotation payload for tables (if columns present)
+    annotations: list[dict] | None = None
+    col_idx = 0
+    while f"col_name_{col_idx}" in form:
+        if annotations is None:
+            annotations = []
+        col_name = form[f"col_name_{col_idx}"]
+        description = form.get(f"col_desc_{col_idx}", "").strip() or None
+
+        # Gather links for this column
+        links: list[dict] = []
+        link_idx = 0
+        while True:
+            type_key = f"link_type_{col_idx}_{link_idx}"
+            target_key = f"link_target_{col_idx}_{link_idx}"
+            column_key = f"link_column_{col_idx}_{link_idx}"
+            if type_key not in form:
+                break
+            target_val = form.get(target_key, "").strip()
+            column_val = form.get(column_key, "").strip()
+            if target_val and column_val:
+                links.append(
+                    {
+                        "link_type": form[type_key],
+                        "target_table": target_val,
+                        "target_column": column_val,
+                    }
+                )
+            link_idx += 1
+
+        annotations.append(
+            {
+                "column_name": col_name,
+                "description": description,
+                "links": links,
+            }
+        )
+        col_idx += 1
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=request.app),
+        base_url="http://localhost",
+    ) as client:
+        headers = {"Authorization": f"Bearer {user.token}"}
+
+        # PATCH mutable fields
+        resp = await client.patch(
+            f"/api/v1/assets/{asset_id}",
+            json=patch_body,
+            headers=headers,
+        )
+        if resp.status_code >= 400:
+            error = resp.json().get("detail", "Failed to update asset.")
+            asset = await _fetch_asset(request, asset_id, user)
+            ctx = _page_context(request, user, settings, "explore")
+            ctx["asset"] = asset
+            ctx["error"] = error
+            return templates.TemplateResponse(
+                request, "explore_edit.html", ctx, status_code=422
+            )
+
+        # PATCH annotations (tables only)
+        if annotations is not None:
+            ann_resp = await client.patch(
+                f"/api/v1/tables/{asset_id}/annotations",
+                json={"column_annotations": annotations},
+                headers=headers,
+            )
+            if ann_resp.status_code >= 400:
+                detail = ann_resp.json().get("detail", "")
+                if isinstance(detail, dict):
+                    error = detail.get("message", "Annotation update failed.")
+                else:
+                    error = str(detail) or "Annotation update failed."
+                asset = await _fetch_asset(request, asset_id, user)
+                ctx = _page_context(request, user, settings, "explore")
+                ctx["asset"] = asset
+                ctx["error"] = error
+                return templates.TemplateResponse(
+                    request, "explore_edit.html", ctx, status_code=422
+                )
+
+    # Success — redirect to detail page
+    from starlette.responses import RedirectResponse
+
+    return RedirectResponse(url=f"/ui/explore/{asset_id}", status_code=303)
+
+
+async def _fetch_asset(request: Request, asset_id: str, user: AuthUser) -> dict:
+    """Fetch a single asset via internal ASGI transport."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=request.app),
+        base_url="http://localhost",
+    ) as client:
+        resp = await client.get(
+            f"/api/v1/assets/{asset_id}",
+            headers={"Authorization": f"Bearer {user.token}"},
+        )
+    if resp.status_code == 404:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Asset not found")
+    if resp.status_code == 403:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=403, detail="Not authorized to edit this asset")
+    return resp.json()
 
 
 # ---------------------------------------------------------------------------

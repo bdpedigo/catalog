@@ -1,6 +1,116 @@
 {% extends "base.html" %}
 {% block title %}Explore Assets — CAVE Catalog{% endblock %}
+{% block head %}
+<style>
+  .col-hidden { display: none !important; }
+</style>
+{% endblock %}
 {% block content %}
 <h1>Explore Assets</h1>
-<p>Coming soon.</p>
+
+<!-- Filter bar -->
+<div class="filter-bar">
+  <form id="filter-form" hx-get="/ui/fragments/assets" hx-target="#asset-table-container" hx-push-url="false">
+    {% for f in get_filterable_fields() %}
+      {% if f.default %}
+      <div class="filter-item">
+        <label for="filter-{{ f.key }}">{{ f.label }}:</label>
+        {% if f.filter_type == "enum" %}
+        <select id="filter-{{ f.key }}" name="{{ f.key }}" hx-get="/ui/fragments/assets" hx-target="#asset-table-container" hx-include="#filter-form">
+          <option value="">All</option>
+          {% for v in f.enum_values %}
+          <option value="{{ v }}" {% if filters.get(f.key) == v %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select>
+        {% elif f.filter_type == "substring" %}
+        <input type="text" id="filter-{{ f.key }}" name="{{ f.key }}"
+               value="{{ filters.get(f.key, '') }}"
+               placeholder="Search..."
+               hx-get="/ui/fragments/assets" hx-target="#asset-table-container"
+               hx-trigger="input changed delay:300ms"
+               hx-include="#filter-form">
+        {% elif f.filter_type == "exact" %}
+        <input type="number" id="filter-{{ f.key }}" name="{{ f.key }}"
+               value="{{ filters.get(f.key, '') }}"
+               placeholder="{{ f.label }}"
+               hx-get="/ui/fragments/assets" hx-target="#asset-table-container"
+               hx-trigger="input changed delay:300ms"
+               hx-include="#filter-form">
+        {% endif %}
+      </div>
+      {% endif %}
+    {% endfor %}
+    <input type="hidden" name="sort_by" id="sort_by" value="{{ sort_by }}">
+    <input type="hidden" name="sort_order" id="sort_order" value="{{ sort_order }}">
+    <button type="button" class="btn-link" onclick="resetFilters()">Reset</button>
+  </form>
+</div>
+
+<!-- Column toggles -->
+<div class="column-toggles">
+  <span class="toggle-label">Columns:</span>
+  {% for f in fields %}
+  <label class="col-toggle">
+    <input type="checkbox" data-col-toggle="{{ f.key }}" {% if f.key in visible_columns %}checked{% endif %}
+           onchange="toggleColumn(this)">
+    {{ f.label }}
+  </label>
+  {% endfor %}
+</div>
+
+<!-- Asset table container (swapped by HTMX) -->
+<div id="asset-table-container">
+  {% include "fragments/asset_table.html" %}
+</div>
+
+<script>
+function getVisibleColumns() {
+  const stored = localStorage.getItem('explore_visible_columns');
+  if (stored) return JSON.parse(stored);
+  return null;
+}
+
+function saveVisibleColumns(cols) {
+  localStorage.setItem('explore_visible_columns', JSON.stringify(cols));
+}
+
+function toggleColumn(checkbox) {
+  const col = checkbox.dataset.colToggle;
+  const cells = document.querySelectorAll('[data-col="' + col + '"]');
+  if (checkbox.checked) {
+    cells.forEach(function(c) { c.classList.remove('col-hidden'); });
+  } else {
+    cells.forEach(function(c) { c.classList.add('col-hidden'); });
+  }
+  var checkboxes = document.querySelectorAll('[data-col-toggle]');
+  var visible = [];
+  checkboxes.forEach(function(cb) { if (cb.checked) visible.push(cb.dataset.colToggle); });
+  saveVisibleColumns(visible);
+}
+
+function applyColumnVisibility() {
+  var stored = getVisibleColumns();
+  if (!stored) return;
+  var checkboxes = document.querySelectorAll('[data-col-toggle]');
+  checkboxes.forEach(function(cb) {
+    var col = cb.dataset.colToggle;
+    var isVisible = stored.includes(col);
+    cb.checked = isVisible;
+    var cells = document.querySelectorAll('[data-col="' + col + '"]');
+    cells.forEach(function(c) {
+      if (isVisible) c.classList.remove('col-hidden');
+      else c.classList.add('col-hidden');
+    });
+  });
+}
+
+function resetFilters() {
+  document.querySelectorAll('#filter-form input[type="text"], #filter-form input[type="number"]').forEach(function(i) { i.value = ''; });
+  document.querySelectorAll('#filter-form select').forEach(function(s) { s.selectedIndex = 0; });
+  htmx.trigger(document.querySelector('#filter-form select'), 'change');
+}
+
+document.addEventListener('DOMContentLoaded', applyColumnVisibility);
+document.addEventListener('htmx:afterSwap', applyColumnVisibility);
+</script>
 {% endblock %}

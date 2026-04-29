@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ asset.name }} — CAVE Catalog{% endblock %}
+{% block content %}
+<div class="detail-header">
+  <a href="/ui/explore/{{ asset.id }}" class="btn-link">← Back to detail</a>
+  <h1>Edit: {{ asset.name }}</h1>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<form id="edit-form" method="post" action="/ui/explore/{{ asset.id }}/edit">
+
+  {# ── Mutable fields ── #}
+  <div class="detail-card">
+    <h2>Properties</h2>
+
+    <div class="form-group">
+      <label>Maturity</label>
+      <div class="radio-group">
+        {% for val in ["stable", "draft", "deprecated"] %}
+        <label class="radio-label">
+          <input type="radio" name="maturity" value="{{ val }}"
+                 {% if asset.maturity == val %}checked{% endif %}>
+          <span class="badge badge-{{ val }}">{{ val }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="access_group">Access Group</label>
+      <input type="text" id="access_group" name="access_group"
+             value="{{ asset.access_group or '' }}"
+             placeholder="Leave blank for no restriction">
+    </div>
+
+    <div class="form-group">
+      <label for="expires_at">Expires At</label>
+      <input type="datetime-local" id="expires_at" name="expires_at"
+             value="{{ asset.expires_at[:16] if asset.expires_at else '' }}">
+      <small class="form-hint">Leave blank for no expiration.</small>
+    </div>
+  </div>
+
+  {% if asset.asset_type == "table" and asset.columns %}
+  {# ── Column annotations ── #}
+  <div class="detail-card">
+    <h2>Column Annotations</h2>
+    <table class="data-table annotation-table">
+      <thead>
+        <tr>
+          <th>Column</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Links</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for col in asset.columns %}
+        <tr>
+          <td><code>{{ col.name }}</code></td>
+          <td><code>{{ col.dtype }}</code></td>
+          <td>
+            <input type="text"
+                   name="col_desc_{{ loop.index0 }}"
+                   value="{{ col.description or '' }}"
+                   placeholder="Optional description">
+            <input type="hidden" name="col_name_{{ loop.index0 }}" value="{{ col.name }}">
+          </td>
+          <td>
+            <div id="links-{{ loop.index0 }}">
+              {% if col.links %}
+                {% for link in col.links %}
+                <div class="link-row">
+                  <select name="link_type_{{ loop.index0 }}_{{ loop.index0 }}" class="link-type">
+                    <option value="foreign_key" {% if link.link_type == "foreign_key" %}selected{% endif %}>Foreign Key</option>
+                    <option value="join" {% if link.link_type == "join" %}selected{% endif %}>Join</option>
+                  </select>
+                  <input type="text" name="link_target_{{ loop.index0 }}_{{ loop.index0 }}"
+                         class="link-target" value="{{ link.target_table }}" placeholder="target table">
+                  <input type="text" name="link_column_{{ loop.index0 }}_{{ loop.index0 }}"
+                         class="link-column" value="{{ link.target_column }}" placeholder="target column">
+                  <button type="button" class="btn btn-secondary btn-small remove-link-btn"
+                          onclick="this.closest('.link-row').remove()">✕</button>
+                </div>
+                {% endfor %}
+              {% endif %}
+            </div>
+            <button type="button" class="btn btn-secondary btn-small"
+                    onclick="addEditLinkRow({{ loop.index0 }})">+ Link</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save Changes</button>
+    <a href="/ui/explore/{{ asset.id }}" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+
+{# ── Link row template for dynamically adding links ── #}
+<template id="edit-link-row-template">
+  <div class="link-row">
+    <select class="link-type" name="">
+      <option value="foreign_key">Foreign Key</option>
+      <option value="join">Join</option>
+    </select>
+    <input type="text" class="link-target" name="" placeholder="target table">
+    <input type="text" class="link-column" name="" placeholder="target column">
+    <button type="button" class="btn btn-secondary btn-small remove-link-btn"
+            onclick="this.closest('.link-row').remove()">✕</button>
+  </div>
+</template>
+
+<script>
+let editLinkCounter = 100;  // start high to avoid collision with existing
+
+function addEditLinkRow(colIndex) {
+  const container = document.getElementById('links-' + colIndex);
+  const template = document.getElementById('edit-link-row-template');
+  const clone = template.content.cloneNode(true);
+  const linkId = editLinkCounter++;
+
+  clone.querySelector('.link-type').name = 'link_type_' + colIndex + '_' + linkId;
+  clone.querySelector('.link-target').name = 'link_target_' + colIndex + '_' + linkId;
+  clone.querySelector('.link-column').name = 'link_column_' + colIndex + '_' + linkId;
+
+  container.appendChild(clone);
+}
+</script>
+{% endblock %}

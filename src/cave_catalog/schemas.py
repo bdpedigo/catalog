@@ -64,6 +64,14 @@ class AccessResponse(BaseModel):
     is_managed: bool = True
 
 
+class AssetUpdateRequest(BaseModel):
+    """Request body for PATCH /api/v1/assets/{id} — mutable fields only."""
+
+    maturity: Maturity | None = None
+    access_group: str | None = None
+    expires_at: datetime | None = None
+
+
 class ValidationCheck(BaseModel):
     passed: bool
     message: str | None = None

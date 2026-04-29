@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.name }} — CAVE Catalog{% endblock %}
+{% block content %}
+<div class="detail-header">
+  <a href="/ui/explore" class="btn-link">← Back to list</a>
+  <h1>{{ asset.name }}</h1>
+  <a href="/ui/explore/{{ asset.id }}/edit" class="btn btn-secondary">Edit</a>
+</div>
+
+<!-- Summary card -->
+<div class="detail-card">
+  <h2>Summary</h2>
+  <dl class="detail-grid">
+    <dt>Type</dt><dd><span class="badge badge-{{ asset.asset_type }}">{{ asset.asset_type }}</span></dd>
+    <dt>Format</dt><dd>{% if asset.format %}<span class="badge badge-{{ asset.format }}">{{ asset.format }}</span>{% else %}—{% endif %}</dd>
+    {% if asset.asset_type == "table" %}
+    <dt>Source</dt><dd>{% if asset.source %}{{ asset.source }}{% else %}—{% endif %}</dd>
+    {% endif %}
+    <dt>Mat Version</dt><dd>{% if asset.mat_version is not none %}{{ asset.mat_version }}{% else %}—{% endif %}</dd>
+    <dt>Revision</dt><dd>{{ asset.revision }}</dd>
+    <dt>Maturity</dt><dd><span class="badge badge-{{ asset.maturity }}">{{ asset.maturity }}</span></dd>
+    <dt>Mutability</dt><dd>{{ asset.mutability }}</dd>
+    <dt>Owner</dt><dd>{{ asset.owner }}</dd>
+    <dt>Created</dt><dd>{{ asset.created_at }}</dd>
+    <dt>Expires</dt><dd>{% if asset.expires_at %}{{ asset.expires_at }}{% else %}—{% endif %}</dd>
+    <dt>URI</dt><dd class="uri-cell">{{ asset.uri }}</dd>
+    <dt>Managed</dt><dd>{{ "yes" if asset.is_managed else "no" }}</dd>
+    <dt>Access Group</dt><dd>{% if asset.access_group %}{{ asset.access_group }}{% else %}—{% endif %}</dd>
+  </dl>
+</div>
+
+{% if asset.asset_type == "table" %}
+<!-- Cached metadata -->
+<div class="detail-card">
+  <h2>Cached Metadata</h2>
+  {% if asset.cached_metadata %}
+  <dl class="detail-grid">
+    <dt>Rows</dt><dd>{% if asset.cached_metadata.n_rows is not none %}{{ "{:,}".format(asset.cached_metadata.n_rows) }}{% else %}—{% endif %}</dd>
+    <dt>Columns</dt><dd>{% if asset.cached_metadata.n_columns is not none %}{{ asset.cached_metadata.n_columns }}{% else %}—{% endif %}</dd>
+    <dt>Size</dt><dd>{% if asset.cached_metadata.n_bytes is not none %}{{ asset.cached_metadata.n_bytes | filesizeformat }}{% else %}—{% endif %}</dd>
+    <dt>Partition Columns</dt><dd>{% if asset.cached_metadata.partition_columns %}{{ asset.cached_metadata.partition_columns | join(", ") }}{% else %}—{% endif %}</dd>
+    <dt>Last Refreshed</dt><dd>{% if asset.metadata_cached_at %}{{ asset.metadata_cached_at }}{% else %}—{% endif %}</dd>
+  </dl>
+  {% else %}
+  <p class="empty-state-inline">Metadata not yet extracted. Use the refresh endpoint to populate.</p>
+  {% endif %}
+</div>
+
+<!-- Columns table -->
+<div class="detail-card">
+  <h2>Columns{% if asset.columns %} ({{ asset.columns | length }}){% endif %}</h2>
+  {% if asset.columns %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Links</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for col in asset.columns %}
+      <tr>
+        <td><code>{{ col.name }}</code></td>
+        <td><code>{{ col.dtype }}</code></td>
+        <td>{% if col.description %}{{ col.description }}{% else %}—{% endif %}</td>
+        <td>
+          {% if col.links %}
+            {% for link in col.links %}
+            <span class="link-ref">→ {{ link.target_table }}.{{ link.target_column }}</span>{% if not loop.last %}<br>{% endif %}
+            {% endfor %}
+          {% else %}
+          —
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty-state-inline">No column metadata available.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if asset.asset_type != "table" and asset.properties %}
+<!-- Properties for non-table assets -->
+<div class="detail-card">
+  <h2>Properties</h2>
+  <pre class="properties-json">{{ asset.properties | tojson(indent=2) }}</pre>
+</div>
+{% endif %}
+{% endblock %}

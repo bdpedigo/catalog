@@ -28,6 +28,12 @@ async def client(tmp_path):
     """
     # Import here so env vars are set by the _env fixture first
     from cave_catalog.app import create_app
+    from cave_catalog.field_registry import resolve_registry
+    from cave_catalog.schemas import AssetResponse
+    from cave_catalog.table_schemas import TableResponse
+
+    # Resolve field registry (normally done in lifespan, which ASGI transport skips)
+    resolve_registry(AssetResponse, TableResponse)
 
     db_path = tmp_path / "test.db"
     db_url = f"sqlite+aiosqlite:///{db_path}"

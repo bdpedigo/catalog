@@ -41,6 +41,19 @@ def upgrade() -> None:
         sa.Column("access_group", sa.String(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        # Table-specific columns (nullable, populated only for asset_type="table")
+        sa.Column("source", sa.String(), nullable=True),
+        sa.Column(
+            "cached_metadata",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+        ),
+        sa.Column("metadata_cached_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "column_annotations",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
 

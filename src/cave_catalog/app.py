@@ -11,8 +11,11 @@ from fastapi.staticfiles import StaticFiles
 
 from cave_catalog.config import get_settings
 from cave_catalog.db.session import get_engine
+from cave_catalog.field_registry import resolve_registry
 from cave_catalog.routers import assets, health, tables, ui
 from cave_catalog.routers.ui import _RedirectException
+from cave_catalog.schemas import AssetResponse
+from cave_catalog.table_schemas import TableResponse
 
 logger = structlog.get_logger()
 
@@ -21,6 +24,7 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level.upper())
+    resolve_registry(AssetResponse, TableResponse)
     logger.info(
         "startup", service=settings.service_name, auth_enabled=settings.auth.enabled
     )

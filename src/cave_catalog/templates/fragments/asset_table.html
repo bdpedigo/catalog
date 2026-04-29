@@ -1,0 +1,72 @@
+<!-- Asset table fragment — swapped by HTMX on filter/sort/page changes -->
+{% if assets %}
+<div class="table-info">
+  Showing {{ offset + 1 }}–{{ offset + assets|length }} of {{ total }}
+</div>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      {% for f in fields %}
+      <th data-col="{{ f.key }}" class="sortable"
+          hx-get="/ui/fragments/assets"
+          hx-target="#asset-table-container"
+          hx-include="#filter-form"
+          hx-vals='{"sort_by": "{{ f.key }}", "sort_order": "{% if sort_by == f.key and sort_order == "asc" %}desc{% else %}asc{% endif %}"}'>
+        {{ f.label }}
+        {% if sort_by == f.key %}
+          <span class="sort-indicator">{% if sort_order == "asc" %}▲{% else %}▼{% endif %}</span>
+        {% endif %}
+      </th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for asset in assets %}
+    <tr class="clickable-row" onclick="location.href='/ui/explore/{{ asset.id }}'">
+      {% for f in fields %}
+      <td data-col="{{ f.key }}">
+        {% if f.formatter == "badge" %}
+        <span class="badge badge-{{ asset|format_field(f) }}">{{ asset|format_field(f) }}</span>
+        {% else %}
+        {{ asset|format_field(f) }}
+        {% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Pagination -->
+{% if total > limit %}
+<div class="pagination">
+  {% if offset > 0 %}
+  <a href="#" class="btn-page"
+     hx-get="/ui/fragments/assets"
+     hx-target="#asset-table-container"
+     hx-include="#filter-form"
+     hx-vals='{"offset": {{ offset - limit }}, "limit": {{ limit }}}'>← Prev</a>
+  {% else %}
+  <span class="btn-page disabled">← Prev</span>
+  {% endif %}
+
+  <span class="page-info">Page {{ (offset // limit) + 1 }} of {{ ((total - 1) // limit) + 1 }}</span>
+
+  {% if offset + limit < total %}
+  <a href="#" class="btn-page"
+     hx-get="/ui/fragments/assets"
+     hx-target="#asset-table-container"
+     hx-include="#filter-form"
+     hx-vals='{"offset": {{ offset + limit }}, "limit": {{ limit }}}'>Next →</a>
+  {% else %}
+  <span class="btn-page disabled">Next →</span>
+  {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+  <p>No assets found matching your filters.</p>
+</div>
+{% endif %}

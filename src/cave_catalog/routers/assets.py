@@ -9,8 +9,8 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import and_, func, nulls_first, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,12 +32,13 @@ from cave_catalog.schemas import (
     AccessResponse,
     AssetRequest,
     AssetResponse,
+    AssetUpdateRequest,
     ValidationCheck,
     ValidationReport,
 )
 from cave_catalog.table_schemas import TableResponse
-from cave_catalog.validation import run_validation_pipeline
 from cave_catalog.validation import check_name_reservation as _check_name_reservation
+from cave_catalog.validation import run_validation_pipeline
 
 logger = structlog.get_logger()
 
@@ -232,14 +233,20 @@ async def check_name(
 
 @router.get("/", response_model=list[TableResponse | AssetResponse])
 async def list_assets(
+    response: Response,
     datastack: str = Query(...),
     name: str | None = Query(default=None),
+    name_contains: str | None = Query(default=None),
     mat_version: int | None = Query(default=None),
     revision: int | None = Query(default=None),
     format: str | None = Query(default=None),
     asset_type: str | None = Query(default=None),
     mutability: str | None = Query(default=None),
     maturity: str | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    sort_by: str = Query(default="name"),
+    sort_order: str = Query(default="asc", pattern="^(asc|desc)$"),
     user: AuthUser = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -256,6 +263,8 @@ async def list_assets(
     )
     if name is not None:
         stmt = stmt.where(Asset.name == name)
+    if name_contains is not None:
+        stmt = stmt.where(Asset.name.ilike(f"%{name_contains}%"))
     if mat_version is not None:
         stmt = stmt.where(Asset.mat_version == mat_version)
     if revision is not None:
@@ -268,6 +277,23 @@ async def list_assets(
         stmt = stmt.where(Asset.mutability == mutability)
     if maturity is not None:
         stmt = stmt.where(Asset.maturity == maturity)
+
+    # Sorting with NULLs first
+    sort_column = getattr(Asset, sort_by, None)
+    if sort_column is None:
+        sort_column = Asset.name
+    if sort_order == "desc":
+        order_clause = nulls_first(sort_column.desc())
+    else:
+        order_clause = nulls_first(sort_column.asc())
+    stmt = stmt.order_by(order_clause)
+
+    # Pagination: if limit is provided, include total count header
+    if limit is not None:
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = (await session.execute(count_stmt)).scalar_one()
+        response.headers["X-Total-Count"] = str(total)
+        stmt = stmt.offset(offset).limit(limit)
 
     result = await session.execute(stmt)
     assets = result.scalars().all()
@@ -311,6 +337,34 @@ async def delete_asset(
     await session.delete(asset)
     await session.commit()
     logger.info("asset_deleted", id=str(asset_id), user=user.user_id)
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/v1/assets/{id}
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/{asset_id}", response_model=TableResponse | AssetResponse)
+async def update_asset(
+    asset_id: uuid.UUID,
+    body: AssetUpdateRequest,
+    user: AuthUser = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> AssetResponse | TableResponse:
+    logger.debug("update_asset", asset_id=str(asset_id))
+    asset = await get_asset(session, asset_id)
+    require_datastack_permission(user, settings, asset.datastack, "edit")
+
+    # Apply only the fields that were explicitly sent
+    update_data = body.model_dump(exclude_unset=True)
+    for field_name, value in update_data.items():
+        setattr(asset, field_name, value)
+
+    await session.commit()
+    await session.refresh(asset)
+    logger.info("asset_updated", id=str(asset_id), fields=list(update_data.keys()))
+    return asset_to_response(asset)
 
 
 # ---------------------------------------------------------------------------
