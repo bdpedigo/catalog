@@ -120,6 +120,27 @@ class TestRegisterSubmit:
         assert resp.status_code == 200
         assert "integer" in resp.text.lower()
 
+    async def test_non_integer_revision_returns_error(self, client, monkeypatch):
+        """Submit with a non-integer revision returns a user-friendly error."""
+        monkeypatch.setenv("DATASTACKS", "minnie65_public")
+        from cave_catalog.config import get_settings
+
+        get_settings.cache_clear()
+
+        resp = await client.post(
+            "/ui/register/submit",
+            data={
+                "uri": "gs://bucket/table",
+                "format": "delta",
+                "name": "test_table",
+                "revision": "not_an_int",
+                "n_columns": "0",
+            },
+            cookies={"cave_catalog_datastack": "minnie65_public"},
+        )
+        assert resp.status_code == 200
+        assert "integer" in resp.text.lower()
+
     async def test_missing_fields(self, client, monkeypatch):
         """Submit without required fields returns error."""
         monkeypatch.setenv("DATASTACKS", "minnie65_public")
