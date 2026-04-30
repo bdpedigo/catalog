@@ -650,7 +650,17 @@ async def register_submit(
         )
 
     mat_version_raw = str(form.get("mat_version", "")).strip()
-    mat_version = int(mat_version_raw) if mat_version_raw else None
+    if mat_version_raw:
+        try:
+            mat_version = int(mat_version_raw)
+        except ValueError:
+            return templates.TemplateResponse(
+                request,
+                "fragments/register_error.html",
+                {"error": "Mat version must be an integer."},
+            )
+    else:
+        mat_version = None
 
     revision_raw = str(form.get("revision", "0")).strip()
     revision = int(revision_raw) if revision_raw else 0
