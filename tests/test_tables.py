@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 from cave_catalog.table_schemas import (
     ColumnAnnotation,
     ColumnInfo,
-    ColumnLink,
+    MatKind,
     MergedColumn,
     TableMetadata,
     merge_columns,
@@ -86,13 +86,13 @@ def _patch_validation(monkeypatch):
     )
 
 
-def _patch_link_validation(monkeypatch, passed: bool = True, errors=None):
-    """Patch column link validation."""
-    from cave_catalog.validation import LinkValidationResult
+def _patch_kind_validation(monkeypatch, passed: bool = True, errors=None):
+    """Patch column kind validation."""
+    from cave_catalog.validation import KindValidationResult
 
-    result = LinkValidationResult(passed=passed, errors=errors or [])
+    result = KindValidationResult(passed=passed, errors=errors or [])
     monkeypatch.setattr(
-        "cave_catalog.routers.tables.validate_column_links",
+        "cave_catalog.routers.tables.validate_column_kinds",
         AsyncMock(return_value=result),
     )
 
@@ -101,7 +101,7 @@ async def _register_table(client, monkeypatch, **overrides) -> dict:
     """Register a table and return the response JSON."""
     _patch_validation(monkeypatch)
     _patch_extraction(monkeypatch)
-    _patch_link_validation(monkeypatch)
+    _patch_kind_validation(monkeypatch)
     resp = await client.post(
         "/api/v1/tables/register", json=_table_payload(**overrides)
     )
@@ -124,7 +124,7 @@ def test_merge_no_annotations():
     assert len(result) == 3
     assert all(isinstance(c, MergedColumn) for c in result)
     assert all(c.description is None for c in result)
-    assert all(c.links == [] for c in result)
+    assert all(c.kind is None for c in result)
 
 
 def test_merge_with_annotations():
@@ -133,14 +133,15 @@ def test_merge_with_annotations():
         ColumnAnnotation(
             column_name="b",
             description="Column B",
-            links=[ColumnLink(link_type="fk", target_table="t", target_column="c")],
+            kind=MatKind(target_table="t", target_column="c"),
         ),
     ]
     result = merge_columns(_DELTA_METADATA, anns)
     by_name = {c.name: c for c in result}
 
     assert by_name["a"].description == "Column A"
-    assert by_name["b"].links[0].link_type == "fk"
+    assert by_name["b"].kind is not None
+    assert by_name["b"].kind.kind == "materialization"
     assert by_name["c"].description is None  # unannotated
 
 
@@ -209,7 +210,7 @@ async def test_register_table_success(client, monkeypatch):
 
 async def test_register_table_with_annotations(client, monkeypatch):
     annotations = [
-        {"column_name": "a", "description": "Col A", "links": []},
+        {"column_name": "a", "description": "Col A"},
     ]
     data = await _register_table(client, monkeypatch, column_annotations=annotations)
 
@@ -219,13 +220,49 @@ async def test_register_table_with_annotations(client, monkeypatch):
     assert by_name["a"]["description"] == "Col A"
 
 
+async def test_register_table_with_segmentation_kind(client, monkeypatch):
+    """Segmentation kind round-trip — no ME validation."""
+    annotations = [
+        {
+            "column_name": "a",
+            "kind": {"kind": "segmentation", "node_level": "root_id"},
+        }
+    ]
+    data = await _register_table(client, monkeypatch, column_annotations=annotations)
+
+    ann = data["column_annotations"][0]
+    assert ann["kind"]["kind"] == "segmentation"
+    assert ann["kind"]["node_level"] == "root_id"
+    # Merged column should carry the kind
+    by_name = {c["name"]: c for c in data["columns"]}
+    assert by_name["a"]["kind"]["kind"] == "segmentation"
+
+
+async def test_register_table_with_split_point_kind(client, monkeypatch):
+    """Split point kind round-trip with point_group."""
+    annotations = [
+        {
+            "column_name": "c",
+            "kind": {"kind": "split_point", "axis": "x", "point_group": "pt_position"},
+        }
+    ]
+    data = await _register_table(client, monkeypatch, column_annotations=annotations)
+
+    ann = data["column_annotations"][0]
+    assert ann["kind"]["kind"] == "split_point"
+    assert ann["kind"]["axis"] == "x"
+    assert ann["kind"]["point_group"] == "pt_position"
+    by_name = {c["name"]: c for c in data["columns"]}
+    assert by_name["c"]["kind"]["kind"] == "split_point"
+
+
 async def test_register_table_duplicate(client, monkeypatch):
     await _register_table(client, monkeypatch)
 
     # Second registration with same key
     _patch_validation(monkeypatch)
     _patch_extraction(monkeypatch)
-    _patch_link_validation(monkeypatch)
+    _patch_kind_validation(monkeypatch)
     resp = await client.post("/api/v1/tables/register", json=_table_payload())
     assert resp.status_code == 409
 
@@ -249,19 +286,17 @@ async def test_register_table_validation_failure(client, monkeypatch):
 
 
 async def test_register_table_link_validation_failure(client, monkeypatch):
-    from cave_catalog.validation import LinkValidationError
+    from cave_catalog.validation import KindValidationError
 
     _patch_validation(monkeypatch)
     _patch_extraction(monkeypatch)
-    _patch_link_validation(
+    _patch_kind_validation(
         monkeypatch,
         passed=False,
         errors=[
-            LinkValidationError(
+            KindValidationError(
                 column_name="a",
-                link_type="fk",
-                target_table="bad_table",
-                target_column="id",
+                kind="materialization",
                 reason="not found",
             )
         ],
@@ -271,19 +306,17 @@ async def test_register_table_link_validation_failure(client, monkeypatch):
         column_annotations=[
             {
                 "column_name": "a",
-                "links": [
-                    {
-                        "link_type": "fk",
-                        "target_table": "bad_table",
-                        "target_column": "id",
-                    }
-                ],
+                "kind": {
+                    "kind": "materialization",
+                    "target_table": "bad_table",
+                    "target_column": "id",
+                },
             }
         ]
     )
     resp = await client.post("/api/v1/tables/register", json=payload)
     assert resp.status_code == 422
-    assert "link validation" in resp.json()["detail"]["message"].lower()
+    assert "kind validation" in resp.json()["detail"]["message"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -295,12 +328,12 @@ async def test_update_annotations_success(client, monkeypatch):
     table = await _register_table(client, monkeypatch)
     table_id = table["id"]
 
-    _patch_link_validation(monkeypatch)
+    _patch_kind_validation(monkeypatch)
     resp = await client.patch(
         f"/api/v1/tables/{table_id}/annotations",
         json={
             "column_annotations": [
-                {"column_name": "a", "description": "Updated A", "links": []},
+                {"column_name": "a", "description": "Updated A"},
             ]
         },
     )
@@ -313,11 +346,11 @@ async def test_update_annotations_clear(client, monkeypatch):
     table = await _register_table(
         client,
         monkeypatch,
-        column_annotations=[{"column_name": "a", "description": "Old", "links": []}],
+        column_annotations=[{"column_name": "a", "description": "Old"}],
     )
     table_id = table["id"]
 
-    _patch_link_validation(monkeypatch)
+    _patch_kind_validation(monkeypatch)
     resp = await client.patch(
         f"/api/v1/tables/{table_id}/annotations",
         json={"column_annotations": []},

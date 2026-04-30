@@ -13,8 +13,11 @@ from cave_catalog.table_schemas import (
     AnnotationUpdateRequest,
     ColumnAnnotation,
     ColumnInfo,
-    ColumnLink,
+    MatKind,
     MergedColumn,
+    PackedPointKind,
+    SegmentationKind,
+    SplitPointKind,
     TableMetadata,
     TablePreviewRequest,
     TablePreviewResponse,
@@ -22,7 +25,6 @@ from cave_catalog.table_schemas import (
     TableResponse,
 )
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 
 # ---------------------------------------------------------------------------
 # DB fixtures
@@ -245,30 +247,130 @@ def test_table_metadata_roundtrip_json():
 
 
 # ---------------------------------------------------------------------------
-# 1.4  ColumnAnnotation / ColumnLink
+# 1.4  ColumnAnnotation / ColumnKind
 # ---------------------------------------------------------------------------
 
 
 def test_column_annotation_minimal():
     ann = ColumnAnnotation(column_name="pt_root_id")
     assert ann.description is None
-    assert ann.links == []
+    assert ann.kind is None
 
 
-def test_column_annotation_with_links():
+def test_column_annotation_with_mat_kind():
     ann = ColumnAnnotation(
         column_name="pre_pt_root_id",
         description="Pre-synaptic root ID",
-        links=[
-            ColumnLink(
-                link_type="foreign_key",
-                target_table="synapses",
-                target_column="pre_pt_root_id",
-            )
-        ],
+        kind=MatKind(
+            target_table="synapses",
+            target_column="pre_pt_root_id",
+        ),
     )
-    assert len(ann.links) == 1
-    assert ann.links[0].link_type == "foreign_key"
+    assert ann.kind is not None
+    assert ann.kind.kind == "materialization"
+
+
+def test_column_annotation_with_segmentation_kind():
+    ann = ColumnAnnotation(
+        column_name="pt_root_id",
+        kind=SegmentationKind(node_level="root_id"),
+    )
+    assert ann.kind.kind == "segmentation"
+    assert ann.kind.node_level == "root_id"
+
+
+def test_segmentation_kind_level2():
+    kind = SegmentationKind(node_level="level2_id")
+    assert kind.node_level == "level2_id"
+
+
+def test_segmentation_kind_supervoxel():
+    kind = SegmentationKind(node_level="supervoxel_id")
+    assert kind.node_level == "supervoxel_id"
+
+
+def test_segmentation_kind_invalid_node_level():
+    import pytest
+
+    with pytest.raises(ValueError, match="Invalid node_level"):
+        SegmentationKind(node_level="something_else")
+
+
+def test_segmentation_kind_invalid_level_format():
+    import pytest
+
+    with pytest.raises(ValueError, match="Invalid node_level"):
+        SegmentationKind(node_level="levelX_id")
+
+
+def test_column_annotation_with_split_point_kind():
+    ann = ColumnAnnotation(
+        column_name="pt_position_x",
+        kind=SplitPointKind(axis="x", point_group="pt_position"),
+    )
+    assert ann.kind.kind == "split_point"
+    assert ann.kind.axis == "x"
+    assert ann.kind.point_group == "pt_position"
+
+
+def test_split_point_kind_requires_axis():
+    import pytest
+
+    with pytest.raises(ValueError):
+        SplitPointKind()
+
+
+def test_split_point_kind_invalid_axis():
+    import pytest
+
+    with pytest.raises(ValueError):
+        SplitPointKind(axis="w")
+
+
+def test_split_point_kind_with_resolution():
+    kind = SplitPointKind(axis="z", resolution=8.0)
+    assert kind.resolution == 8.0
+
+
+def test_packed_point_kind_defaults():
+    kind = PackedPointKind()
+    assert kind.kind == "packed_point"
+    assert kind.resolution is None
+
+
+def test_packed_point_kind_resolution_valid():
+    kind = PackedPointKind(resolution=[8.0, 8.0, 40.0])
+    assert kind.resolution == [8.0, 8.0, 40.0]
+
+
+def test_packed_point_kind_resolution_wrong_length():
+    import pytest
+
+    with pytest.raises(ValueError, match="exactly 3"):
+        PackedPointKind(resolution=[8.0, 8.0])
+
+
+def test_kind_discriminator_from_dict():
+    """ColumnAnnotation should parse kind from dict via discriminator."""
+    ann = ColumnAnnotation.model_validate(
+        {
+            "column_name": "col",
+            "kind": {"kind": "segmentation", "node_level": "root_id"},
+        }
+    )
+    assert isinstance(ann.kind, SegmentationKind)
+
+
+def test_kind_discriminator_invalid_kind_value():
+    import pytest
+
+    with pytest.raises(ValueError):
+        ColumnAnnotation.model_validate(
+            {
+                "column_name": "col",
+                "kind": {"kind": "invalid_kind"},
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -369,13 +471,11 @@ def test_merged_column():
         name="pre_pt_root_id",
         dtype="int64",
         description="Pre-synaptic root",
-        links=[
-            ColumnLink(
-                link_type="foreign_key",
-                target_table="synapses",
-                target_column="pre_pt_root_id",
-            )
-        ],
+        kind=MatKind(
+            target_table="synapses",
+            target_column="pre_pt_root_id",
+        ),
     )
     assert col.description == "Pre-synaptic root"
-    assert len(col.links) == 1
+    assert col.kind is not None
+    assert col.kind.kind == "materialization"

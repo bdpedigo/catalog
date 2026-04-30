@@ -364,32 +364,61 @@ async def explore_edit_submit(
         col_name = form[f"col_name_{col_idx}"]
         description = form.get(f"col_desc_{col_idx}", "").strip() or None
 
-        # Gather links for this column
-        links: list[dict] = []
-        link_idx = 0
-        while True:
-            type_key = f"link_type_{col_idx}_{link_idx}"
-            target_key = f"link_target_{col_idx}_{link_idx}"
-            column_key = f"link_column_{col_idx}_{link_idx}"
-            if type_key not in form:
-                break
-            target_val = form.get(target_key, "").strip()
-            column_val = form.get(column_key, "").strip()
-            if target_val and column_val:
-                links.append(
-                    {
-                        "link_type": form[type_key],
-                        "target_table": target_val,
-                        "target_column": column_val,
-                    }
-                )
-            link_idx += 1
+        # Parse kind for this column
+        kind_type = form.get(f"col_kind_{col_idx}", "").strip()
+        kind = None
+        if kind_type == "materialization":
+            target_table = form.get(f"col_kind_target_table_{col_idx}", "").strip()
+            target_column = form.get(f"col_kind_target_column_{col_idx}", "").strip()
+            if target_table and target_column:
+                kind = {
+                    "kind": "materialization",
+                    "target_table": target_table,
+                    "target_column": target_column,
+                }
+        elif kind_type == "segmentation":
+            node_level = form.get(f"col_kind_node_level_{col_idx}", "").strip()
+            custom_level = form.get(f"col_kind_custom_level_{col_idx}", "").strip()
+            if node_level == "custom" and custom_level:
+                node_level = f"level{custom_level}_id"
+            if node_level and node_level != "custom":
+                kind = {
+                    "kind": "segmentation",
+                    "node_level": node_level,
+                }
+        elif kind_type == "packed_point":
+            resolution_raw = form.get(f"col_kind_resolution_{col_idx}", "").strip()
+            resolution = None
+            if resolution_raw:
+                parts = [
+                    float(x.strip()) for x in resolution_raw.split(",") if x.strip()
+                ]
+                if len(parts) == 3:
+                    resolution = parts
+            kind = {
+                "kind": "packed_point",
+                "resolution": resolution,
+            }
+        elif kind_type == "split_point":
+            axis = form.get(f"col_kind_axis_{col_idx}", "").strip() or None
+            point_group = (
+                form.get(f"col_kind_point_group_{col_idx}", "").strip() or None
+            )
+            resolution_raw = form.get(f"col_kind_resolution_{col_idx}", "").strip()
+            resolution = float(resolution_raw) if resolution_raw else None
+            if axis:
+                kind = {
+                    "kind": "split_point",
+                    "axis": axis,
+                    "point_group": point_group,
+                    "resolution": resolution,
+                }
 
         annotations.append(
             {
                 "column_name": col_name,
                 "description": description,
-                "links": links,
+                "kind": kind,
             }
         )
         col_idx += 1
@@ -531,36 +560,67 @@ async def preview_table(
 
 
 def _parse_column_annotations(form: dict) -> list[dict]:
-    """Parse column annotations and links from flat form data."""
+    """Parse column annotations and kinds from flat form data."""
     n_columns = int(form.get("n_columns", 0))
     annotations = []
     for i in range(n_columns):
         col_name = form.get(f"col_name_{i}", "")
         description = form.get(f"col_desc_{i}", "").strip() or None
 
-        # Collect links for this column
-        links = []
-        for key, val in form.items():
-            if key.startswith(f"link_type_{i}_"):
-                link_id = key.split("_")[-1]
-                link_type = val
-                target = form.get(f"link_target_{i}_{link_id}", "")
-                column = form.get(f"link_column_{i}_{link_id}", "")
-                if target and column:
-                    links.append(
-                        {
-                            "link_type": link_type,
-                            "target_table": target,
-                            "target_column": column,
-                        }
-                    )
+        # Parse kind for this column
+        kind_type = form.get(f"col_kind_{i}", "").strip()
+        kind = None
+        if kind_type == "materialization":
+            target_table = form.get(f"col_kind_target_table_{i}", "").strip()
+            target_column = form.get(f"col_kind_target_column_{i}", "").strip()
+            if target_table and target_column:
+                kind = {
+                    "kind": "materialization",
+                    "target_table": target_table,
+                    "target_column": target_column,
+                }
+        elif kind_type == "segmentation":
+            node_level = form.get(f"col_kind_node_level_{i}", "").strip()
+            custom_level = form.get(f"col_kind_custom_level_{i}", "").strip()
+            if node_level == "custom" and custom_level:
+                node_level = f"level{custom_level}_id"
+            if node_level and node_level != "custom":
+                kind = {
+                    "kind": "segmentation",
+                    "node_level": node_level,
+                }
+        elif kind_type == "packed_point":
+            resolution_raw = form.get(f"col_kind_resolution_{i}", "").strip()
+            resolution = None
+            if resolution_raw:
+                parts = [
+                    float(x.strip()) for x in resolution_raw.split(",") if x.strip()
+                ]
+                if len(parts) == 3:
+                    resolution = parts
+            kind = {
+                "kind": "packed_point",
+                "resolution": resolution,
+            }
+        elif kind_type == "split_point":
+            axis = form.get(f"col_kind_axis_{i}", "").strip() or None
+            point_group = form.get(f"col_kind_point_group_{i}", "").strip() or None
+            resolution_raw = form.get(f"col_kind_resolution_{i}", "").strip()
+            resolution = float(resolution_raw) if resolution_raw else None
+            if axis:
+                kind = {
+                    "kind": "split_point",
+                    "axis": axis,
+                    "point_group": point_group,
+                    "resolution": resolution,
+                }
 
-        if description or links:
+        if description or kind:
             annotations.append(
                 {
                     "column_name": col_name,
                     "description": description,
-                    "links": links,
+                    "kind": kind,
                 }
             )
     return annotations
@@ -801,4 +861,6 @@ async def check_uri_fragment(
             f'<span class="name-check unavailable">&#10007; URI already registered (ID: {existing.id})</span>'
         )
 
-    return HTMLResponse('<span class="name-check available">&#10003; URI available</span>')
+    return HTMLResponse(
+        '<span class="name-check available">&#10003; URI available</span>'
+    )

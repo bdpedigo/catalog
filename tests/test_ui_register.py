@@ -52,7 +52,7 @@ class TestRegisterPageRenders:
         # Should contain annotation inputs
         assert "col_name_0" in resp.text
         assert "col_desc_0" in resp.text
-        assert "Add Link" in resp.text
+        assert "kind-select" in resp.text
 
 
 class TestRegisterSubmit:

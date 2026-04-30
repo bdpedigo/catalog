@@ -142,66 +142,128 @@
 
 </form>
 
-{# ── Link row template (used by JS) ── #}
-<template id="link-row-template">
-  <div class="link-row">
-    <select class="link-type" name="" style="width: auto;">
-      <option value="foreign_key">Foreign Key</option>
-      <option value="join">Join</option>
-    </select>
-    <select class="link-target" name=""
+{# ── Kind field templates (used by JS) ── #}
+<template id="mat-fields-template">
+  <div class="kind-variant-fields">
+    <select class="kind-target-table" name=""
             hx-get="/ui/fragments/linkable-targets"
             hx-trigger="focus once"
             hx-swap="innerHTML">
-      <option value="">-- Select target --</option>
+      <option value="">-- Select target table --</option>
     </select>
-    <select class="link-column" name="">
+    <select class="kind-target-column" name="">
       <option value="">-- Select column --</option>
     </select>
-    <button type="button" class="btn btn-secondary btn-small remove-link-btn"
-            onclick="this.closest('.link-row').remove()">
-      ✕
-    </button>
+  </div>
+</template>
+
+<template id="seg-fields-template">
+  <div class="kind-variant-fields">
+    <select class="kind-node-level" name="" onchange="onSegLevelChange(this)">
+      <option value="">-- Select node level --</option>
+      <option value="root_id">Root ID</option>
+      <option value="supervoxel_id">Supervoxel ID</option>
+      <option value="level2_id">Level 2 ID</option>
+      <option value="custom">Custom level…</option>
+    </select>
+    <input type="number" class="kind-custom-level" name="" min="1"
+           placeholder="Level number" style="display:none;">
+  </div>
+</template>
+
+<template id="packed-point-fields-template">
+  <div class="kind-variant-fields">
+    <input type="text" class="kind-resolution" name=""
+           placeholder="Resolution (rx, ry, rz)">
+  </div>
+</template>
+
+<template id="split-point-fields-template">
+  <div class="kind-variant-fields">
+    <select class="kind-axis" name="">
+      <option value="">-- Select axis --</option>
+      <option value="x">X</option>
+      <option value="y">Y</option>
+      <option value="z">Z</option>
+    </select>
+    <input type="text" class="kind-point-group" name=""
+           placeholder="Point group (e.g. pt_position)">
+    <input type="number" class="kind-resolution" name="" step="any"
+           placeholder="Resolution (scalar)">
   </div>
 </template>
 
 <script>
-let linkCounter = 0;
+function onSegLevelChange(selectEl) {
+  const customInput = selectEl.parentElement.querySelector('.kind-custom-level');
+  if (selectEl.value === 'custom') {
+    customInput.style.display = '';
+    customInput.required = true;
+  } else {
+    customInput.style.display = 'none';
+    customInput.required = false;
+    customInput.value = '';
+  }
+}
 
-function addLinkRow(colIndex) {
-  const container = document.getElementById('links-' + colIndex);
-  const template = document.getElementById('link-row-template');
-  const clone = template.content.cloneNode(true);
-  const linkId = linkCounter++;
+function onKindChange(colIndex, kindValue) {
+  const container = document.getElementById('kind-fields-' + colIndex);
+  container.innerHTML = '';
 
-  // Set unique names for form submission
-  const typeSelect = clone.querySelector('.link-type');
-  typeSelect.name = 'link_type_' + colIndex + '_' + linkId;
+  if (kindValue === 'materialization') {
+    const template = document.getElementById('mat-fields-template');
+    const clone = template.content.cloneNode(true);
 
-  const targetSelect = clone.querySelector('.link-target');
-  targetSelect.name = 'link_target_' + colIndex + '_' + linkId;
+    const targetSelect = clone.querySelector('.kind-target-table');
+    targetSelect.name = 'col_kind_target_table_' + colIndex;
 
-  const columnSelect = clone.querySelector('.link-column');
-  columnSelect.name = 'link_column_' + colIndex + '_' + linkId;
+    const columnSelect = clone.querySelector('.kind-target-column');
+    columnSelect.name = 'col_kind_target_column_' + colIndex;
 
-  // Wire up cascading: when target changes, load columns
-  targetSelect.addEventListener('change', function() {
-    const targetName = this.value;
-    const selectedOption = this.options[this.selectedIndex];
-    const targetType = selectedOption?.dataset?.type || 'table';
-    if (targetName) {
-      const url = '/ui/fragments/target-columns?target_name=' +
-        encodeURIComponent(targetName) + '&target_type=' + encodeURIComponent(targetType);
-      htmx.ajax('GET', url, {target: columnSelect, swap: 'innerHTML'});
-    } else {
-      columnSelect.innerHTML = '<option value="">-- Select column --</option>';
-    }
-  });
+    // Wire up cascading: when target changes, load columns
+    targetSelect.addEventListener('change', function() {
+      const targetName = this.value;
+      const selectedOption = this.options[this.selectedIndex];
+      const targetType = selectedOption?.dataset?.type || 'table';
+      if (targetName) {
+        const url = '/ui/fragments/target-columns?target_name=' +
+          encodeURIComponent(targetName) + '&target_type=' + encodeURIComponent(targetType);
+        htmx.ajax('GET', url, {target: columnSelect, swap: 'innerHTML'});
+      } else {
+        columnSelect.innerHTML = '<option value="">-- Select column --</option>';
+      }
+    });
 
-  container.appendChild(clone);
+    container.appendChild(clone);
+    htmx.process(container);
 
-  // Process HTMX attributes on the newly added elements
-  htmx.process(container.lastElementChild);
+  } else if (kindValue === 'segmentation') {
+    const template = document.getElementById('seg-fields-template');
+    const clone = template.content.cloneNode(true);
+
+    clone.querySelector('.kind-node-level').name = 'col_kind_node_level_' + colIndex;
+    clone.querySelector('.kind-custom-level').name = 'col_kind_custom_level_' + colIndex;
+
+    container.appendChild(clone);
+
+  } else if (kindValue === 'packed_point') {
+    const template = document.getElementById('packed-point-fields-template');
+    const clone = template.content.cloneNode(true);
+
+    clone.querySelector('.kind-resolution').name = 'col_kind_resolution_' + colIndex;
+
+    container.appendChild(clone);
+
+  } else if (kindValue === 'split_point') {
+    const template = document.getElementById('split-point-fields-template');
+    const clone = template.content.cloneNode(true);
+
+    clone.querySelector('.kind-axis').name = 'col_kind_axis_' + colIndex;
+    clone.querySelector('.kind-point-group').name = 'col_kind_point_group_' + colIndex;
+    clone.querySelector('.kind-resolution').name = 'col_kind_resolution_' + colIndex;
+
+    container.appendChild(clone);
+  }
 }
 </script>
 {% endblock %}

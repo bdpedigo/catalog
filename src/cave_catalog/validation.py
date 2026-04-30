@@ -258,49 +258,168 @@ async def check_name_reservation(
     return ValidationCheck(passed=True)
 
 
-# --- Column link validation -------------------------------------------------
+# --- Column kind validation -------------------------------------------------
 
 
 @dataclass
-class LinkValidationError:
-    """A single column link that failed validation."""
+class KindValidationError:
+    """A single column kind that failed validation."""
 
     column_name: str
-    link_type: str
-    target_table: str
-    target_column: str
+    kind: str
     reason: str
 
 
 @dataclass
-class LinkValidationResult:
-    """Result of validating column links against the materialization service."""
+class KindValidationResult:
+    """Result of validating column kinds."""
 
     passed: bool
-    errors: list[LinkValidationError] = field(default_factory=list)
+    errors: list[KindValidationError] = field(default_factory=list)
     skipped: bool = False
     message: str | None = None
 
 
-async def validate_column_links(
-    annotations: list[dict[str, Any]],
-    datastack: str,
-    client: AsyncClient,
-    token: str = "",
-) -> LinkValidationResult:
-    """Validate column link targets against the materialization service.
+# --- Column dtype validation for kinds --------------------------------------
 
-    Checks that each ``target_table`` referenced in column annotations exists
-    in the materialization service for the given datastack.  Column existence
-    is not validated (the ME API does not expose flat column names directly).
+_INTEGER_DTYPES = frozenset(
+    {
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    }
+)
+
+_NUMERIC_DTYPES = _INTEGER_DTYPES | frozenset({"float32", "float64"})
+
+
+def validate_kind_dtypes(
+    annotations: list[dict[str, Any]],
+    columns: list[dict[str, str]],
+) -> list[KindValidationError]:
+    """Check that column dtypes are compatible with their assigned kind.
+
+    - ``segmentation`` requires integer dtype.
+    - ``packed_point`` / ``split_point`` require numeric (integer or float) dtype.
+    - ``materialization`` has no dtype constraint.
+
+    If cached metadata (``columns``) is empty/unavailable, returns no errors
+    (optimistic acceptance).
 
     Parameters
     ----------
     annotations
-        List of column annotation dicts, each with ``column_name``, optional
-        ``links`` list containing ``{link_type, target_table, target_column}``.
+        Column annotation dicts with optional ``kind``.
+    columns
+        List of ``{"name": ..., "dtype": ...}`` from cached metadata.
+
+    Returns
+    -------
+    list[KindValidationError]
+        Errors for columns with incompatible dtypes.
+    """
+    if not columns:
+        return []
+
+    dtype_by_name = {col["name"]: col["dtype"] for col in columns}
+
+    errors: list[KindValidationError] = []
+    for ann in annotations:
+        kind = ann.get("kind")
+        if not kind:
+            continue
+
+        col_name = ann.get("column_name", "")
+        dtype = dtype_by_name.get(col_name)
+        if dtype is None:
+            # Column not in metadata — skip (orphaned annotation)
+            continue
+
+        dtype_lower = dtype.lower()
+        kind_type = kind.get("kind")
+        if kind_type == "segmentation" and dtype_lower not in _INTEGER_DTYPES:
+            errors.append(
+                KindValidationError(
+                    column_name=col_name,
+                    kind="segmentation",
+                    reason=f"Segmentation kind requires an integer column, but '{col_name}' has dtype '{dtype}'",
+                )
+            )
+        elif (
+            kind_type in ("packed_point", "split_point")
+            and dtype_lower not in _NUMERIC_DTYPES
+        ):
+            errors.append(
+                KindValidationError(
+                    column_name=col_name,
+                    kind=kind_type,
+                    reason=f"Point kind requires a numeric column (int or float), but '{col_name}' has dtype '{dtype}'",
+                )
+            )
+
+    return errors
+
+
+def validate_point_group_uniqueness(
+    annotations: list[dict[str, Any]],
+) -> list[KindValidationError]:
+    """Check that no two split_point annotations share the same (point_group, axis).
+
+    Only applies to split_point kinds with a non-null point_group.
+    Returns errors for duplicates.
+    """
+    seen: dict[tuple[str, str], str] = {}  # (point_group, axis) -> first column_name
+    errors: list[KindValidationError] = []
+
+    for ann in annotations:
+        kind = ann.get("kind")
+        if not kind or kind.get("kind") != "split_point":
+            continue
+        point_group = kind.get("point_group")
+        axis = kind.get("axis")
+        if not point_group or not axis:
+            continue
+
+        key = (point_group, axis)
+        if key in seen:
+            errors.append(
+                KindValidationError(
+                    column_name=ann.get("column_name", ""),
+                    kind="split_point",
+                    reason=f"Duplicate (point_group='{point_group}', axis='{axis}'): "
+                    f"already assigned to column '{seen[key]}'",
+                )
+            )
+        else:
+            seen[key] = ann.get("column_name", "")
+
+    return errors
+
+
+async def validate_column_kinds(
+    annotations: list[dict[str, Any]],
+    datastack: str,
+    client: AsyncClient,
+    token: str = "",
+) -> KindValidationResult:
+    """Validate column kinds based on their ``kind`` discriminator.
+
+    - ``materialization``: validate ``target_table`` exists in ME.
+    - ``segmentation``: node_level validated by Pydantic (regex); no ME call.
+    - ``packed_point`` / ``split_point``: validated by Pydantic; no ME call.
+
+    Parameters
+    ----------
+    annotations
+        List of column annotation dicts, each with ``column_name`` and optional
+        ``kind`` dict containing ``{kind, ...variant fields}``.
     datastack
-        Datastack name to validate against.
+        Datastack name to validate materialization kinds against.
     client
         httpx async client for ME calls.
     token
@@ -308,29 +427,32 @@ async def validate_column_links(
 
     Returns
     -------
-    LinkValidationResult
+    KindValidationResult
     """
-    # Collect all unique target tables referenced in links
-    links_by_table: dict[str, list[tuple[str, dict[str, str]]]] = {}
+    # Collect materialization kinds that need ME validation
+    mat_targets: list[tuple[str, str, str]] = []  # (col_name, target_table, target_col)
     for ann in annotations:
         col_name = ann.get("column_name", "")
-        for link in ann.get("links", []):
-            target = link.get("target_table", "")
-            if target:
-                links_by_table.setdefault(target, []).append((col_name, link))
+        kind = ann.get("kind")
+        if not kind or kind.get("kind") != "materialization":
+            continue
+        target_table = kind.get("target_table", "")
+        target_column = kind.get("target_column", "")
+        if target_table:
+            mat_targets.append((col_name, target_table, target_column))
 
-    if not links_by_table:
-        return LinkValidationResult(passed=True)
+    if not mat_targets:
+        return KindValidationResult(passed=True)
 
     settings = get_settings()
     if not settings.mat_engine_url:
         logger.warning(
-            "link_validation_skipped", reason="MAT_ENGINE_URL not configured"
+            "kind_validation_skipped", reason="MAT_ENGINE_URL not configured"
         )
-        return LinkValidationResult(
+        return KindValidationResult(
             passed=True,
             skipped=True,
-            message="Column link validation skipped: MAT_ENGINE_URL not configured",
+            message="Column kind validation skipped: MAT_ENGINE_URL not configured",
         )
 
     # Fetch table list from ME
@@ -341,46 +463,43 @@ async def validate_column_links(
     try:
         response = await client.get(url, headers=headers, timeout=15.0)
     except Exception as exc:
-        logger.warning("link_validation_skipped", reason=str(exc))
-        return LinkValidationResult(
+        logger.warning("kind_validation_skipped", reason=str(exc))
+        return KindValidationResult(
             passed=True,
             skipped=True,
-            message=f"Column link validation skipped: {exc}",
+            message=f"Column kind validation skipped: {exc}",
         )
 
     if response.status_code in (301, 302, 303, 307, 308, 401, 403):
-        return LinkValidationResult(
+        return KindValidationResult(
             passed=True,
             skipped=True,
-            message=f"Column link validation skipped: ME auth failed (HTTP {response.status_code})",
+            message=f"Column kind validation skipped: ME auth failed (HTTP {response.status_code})",
         )
     if response.status_code != 200:
-        return LinkValidationResult(
+        return KindValidationResult(
             passed=True,
             skipped=True,
-            message=f"Column link validation skipped: ME returned HTTP {response.status_code}",
+            message=f"Column kind validation skipped: ME returned HTTP {response.status_code}",
         )
 
     mat_tables: set[str] = set(response.json())
 
-    # Validate each target table exists
-    errors: list[LinkValidationError] = []
-    for target_table, col_links in links_by_table.items():
+    # Validate each materialization target table exists
+    errors: list[KindValidationError] = []
+    for col_name, target_table, target_column in mat_targets:
         if target_table not in mat_tables:
-            for col_name, link in col_links:
-                errors.append(
-                    LinkValidationError(
-                        column_name=col_name,
-                        link_type=link.get("link_type", ""),
-                        target_table=target_table,
-                        target_column=link.get("target_column", ""),
-                        reason=f"Table '{target_table}' not found in materialization service for datastack '{datastack}'",
-                    )
+            errors.append(
+                KindValidationError(
+                    column_name=col_name,
+                    kind="materialization",
+                    reason=f"Table '{target_table}' not found in materialization service for datastack '{datastack}'",
                 )
+            )
 
     if errors:
-        return LinkValidationResult(passed=False, errors=errors)
-    return LinkValidationResult(passed=True)
+        return KindValidationResult(passed=False, errors=errors)
+    return KindValidationResult(passed=True)
 
 
 # --- Main pipeline ----------------------------------------------------------

@@ -43,7 +43,7 @@
         <th>Column</th>
         <th>Type</th>
         <th>Description</th>
-        <th>Links</th>
+        <th>Kind</th>
       </tr>
     </thead>
     <tbody>
@@ -60,12 +60,18 @@
                  placeholder="Optional description"
                  class="col-description">
         </td>
-        <td class="links-cell">
-          <div class="links-container" id="links-{{ loop.index0 }}"></div>
-          <button type="button" class="btn btn-secondary btn-small add-link-btn"
-                  onclick="addLinkRow({{ loop.index0 }})">
-            + Add Link
-          </button>
+        <td class="kind-cell">
+          <div class="kind-container" id="kind-{{ loop.index0 }}">
+            <select name="col_kind_{{ loop.index0 }}" class="kind-select"
+                    onchange="onKindChange({{ loop.index0 }}, this.value)">
+              <option value="">None</option>
+              <option value="materialization">Materialization</option>
+              <option value="segmentation">Segmentation</option>
+              <option value="packed_point">Packed Point</option>
+              <option value="split_point">Split Point</option>
+            </select>
+            <div class="kind-fields" id="kind-fields-{{ loop.index0 }}"></div>
+          </div>
         </td>
       </tr>
       {% endfor %}

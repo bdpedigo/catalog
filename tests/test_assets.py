@@ -316,11 +316,11 @@ def _patch_table_helpers(monkeypatch):
         lambda fmt: mock_extractor,
     )
 
-    from cave_catalog.validation import LinkValidationResult
+    from cave_catalog.validation import KindValidationResult
 
     monkeypatch.setattr(
-        "cave_catalog.routers.tables.validate_column_links",
-        AsyncMock(return_value=LinkValidationResult(passed=True, errors=[])),
+        "cave_catalog.routers.tables.validate_column_kinds",
+        AsyncMock(return_value=KindValidationResult(passed=True, errors=[])),
     )
 
 

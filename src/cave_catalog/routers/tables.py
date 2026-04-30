@@ -36,7 +36,12 @@ from cave_catalog.table_schemas import (
     TableRequest,
     TableResponse,
 )
-from cave_catalog.validation import run_validation_pipeline, validate_column_links
+from cave_catalog.validation import (
+    run_validation_pipeline,
+    validate_column_kinds,
+    validate_kind_dtypes,
+    validate_point_group_uniqueness,
+)
 
 logger = structlog.get_logger()
 
@@ -134,28 +139,45 @@ async def register_table(
     )
     raise_if_validation_failed(report)
 
-    # Column link validation (if annotations provided)
+    # Column kind validation (if annotations provided)
     annotations_dicts = [a.model_dump() for a in body.column_annotations]
     if annotations_dicts:
-        link_result = await validate_column_links(
+        kind_result = await validate_column_kinds(
             annotations_dicts,
             body.datastack,
             get_http_client(),
             token=user.token,
         )
-        if not link_result.passed:
+        if not kind_result.passed:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
-                    "message": "Column link validation failed",
+                    "message": "Column kind validation failed",
                     "errors": [
                         {
                             "column_name": e.column_name,
-                            "target_table": e.target_table,
-                            "target_column": e.target_column,
+                            "kind": e.kind,
                             "reason": e.reason,
                         }
-                        for e in link_result.errors
+                        for e in kind_result.errors
+                    ],
+                },
+            )
+
+        # Point group uniqueness validation
+        pg_errors = validate_point_group_uniqueness(annotations_dicts)
+        if pg_errors:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Point group uniqueness validation failed",
+                    "errors": [
+                        {
+                            "column_name": e.column_name,
+                            "kind": e.kind,
+                            "reason": e.reason,
+                        }
+                        for e in pg_errors
                     ],
                 },
             )
@@ -176,6 +198,28 @@ async def register_table(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Metadata extraction failed: {exc}",
         )
+
+    # Dtype validation for kinds (uses extracted column metadata)
+    if annotations_dicts and metadata.columns:
+        dtype_errors = validate_kind_dtypes(
+            annotations_dicts,
+            [{"name": c.name, "dtype": c.dtype} for c in metadata.columns],
+        )
+        if dtype_errors:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Column kind dtype validation failed",
+                    "errors": [
+                        {
+                            "column_name": e.column_name,
+                            "kind": e.kind,
+                            "reason": e.reason,
+                        }
+                        for e in dtype_errors
+                    ],
+                },
+            )
 
     now = now_utc()
     table = Table(
@@ -251,31 +295,69 @@ async def update_annotations(
 
     require_datastack_permission(user, settings, table.datastack, "edit")
 
-    # Column link validation
+    # Column kind validation
     annotations_dicts = [a.model_dump() for a in body.column_annotations]
     if annotations_dicts:
-        link_result = await validate_column_links(
+        kind_result = await validate_column_kinds(
             annotations_dicts,
             table.datastack,
             get_http_client(),
             token=user.token,
         )
-        if not link_result.passed:
+        if not kind_result.passed:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
-                    "message": "Column link validation failed",
+                    "message": "Column kind validation failed",
                     "errors": [
                         {
                             "column_name": e.column_name,
-                            "target_table": e.target_table,
-                            "target_column": e.target_column,
+                            "kind": e.kind,
                             "reason": e.reason,
                         }
-                        for e in link_result.errors
+                        for e in kind_result.errors
                     ],
                 },
             )
+
+        # Point group uniqueness validation
+        pg_errors = validate_point_group_uniqueness(annotations_dicts)
+        if pg_errors:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Point group uniqueness validation failed",
+                    "errors": [
+                        {
+                            "column_name": e.column_name,
+                            "kind": e.kind,
+                            "reason": e.reason,
+                        }
+                        for e in pg_errors
+                    ],
+                },
+            )
+
+    # Dtype validation for kinds (uses existing cached metadata)
+    if annotations_dicts and table.cached_metadata:
+        columns = table.cached_metadata.get("columns", [])
+        if columns:
+            dtype_errors = validate_kind_dtypes(annotations_dicts, columns)
+            if dtype_errors:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "message": "Column kind dtype validation failed",
+                        "errors": [
+                            {
+                                "column_name": e.column_name,
+                                "kind": e.kind,
+                                "reason": e.reason,
+                            }
+                            for e in dtype_errors
+                        ],
+                    },
+                )
 
     table.column_annotations = annotations_dicts
     await session.commit()

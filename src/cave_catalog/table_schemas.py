@@ -1,14 +1,16 @@
 """Pydantic models for table assets.
 
-Covers cached metadata (format-discriminated), column annotations with links,
-and table-specific request/response schemas.
+Covers cached metadata (format-discriminated), column annotations with kind
+(discriminated union), and table-specific request/response schemas.
 """
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from cave_catalog.schemas import AssetRequest, AssetResponse
 
@@ -35,16 +37,72 @@ class TableMetadata(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Column annotation models (task 1.4)
+# Column kind models (discriminated union)
 # ---------------------------------------------------------------------------
 
+_NODE_LEVEL_RE = re.compile(r"^(root_id|supervoxel_id|level\d+_id)$")
 
-class ColumnLink(BaseModel):
-    """Semantic link from a column to a materialization service table/column."""
 
-    link_type: str
+class MatKind(BaseModel):
+    """Materialization kind — column joins to a specific mat table/column."""
+
+    kind: Literal["materialization"] = "materialization"
     target_table: str
     target_column: str
+
+
+class SegmentationKind(BaseModel):
+    """Segmentation kind — column contains chunkedgraph node IDs."""
+
+    kind: Literal["segmentation"] = "segmentation"
+    node_level: str  # "root_id", "supervoxel_id", or "level{N}_id"
+
+    @field_validator("node_level")
+    @classmethod
+    def _validate_node_level(cls, v: str) -> str:
+        if not _NODE_LEVEL_RE.match(v):
+            raise ValueError(
+                f"Invalid node_level '{v}'. "
+                "Must be 'root_id', 'supervoxel_id', or 'level{{N}}_id' "
+                "(e.g., 'level2_id')."
+            )
+        return v
+
+
+class PackedPointKind(BaseModel):
+    """Packed point kind — column contains all xyz coordinates in one field."""
+
+    kind: Literal["packed_point"] = "packed_point"
+    resolution: list[float] | None = None
+
+    @field_validator("resolution")
+    @classmethod
+    def _validate_resolution(cls, v: list[float] | None) -> list[float] | None:
+        if v is not None and len(v) != 3:
+            raise ValueError(
+                "Packed point resolution must be a list of exactly 3 values [rx, ry, rz]."
+            )
+        return v
+
+
+class SplitPointKind(BaseModel):
+    """Split point kind — column represents a single spatial axis."""
+
+    kind: Literal["split_point"] = "split_point"
+    axis: Literal["x", "y", "z"]
+    point_group: str | None = None
+    resolution: float | None = None
+
+
+ColumnKind = Annotated[
+    MatKind | SegmentationKind | PackedPointKind | SplitPointKind,
+    Field(discriminator="kind"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Column annotation models
+# ---------------------------------------------------------------------------
 
 
 class ColumnAnnotation(BaseModel):
@@ -52,7 +110,7 @@ class ColumnAnnotation(BaseModel):
 
     column_name: str
     description: str | None = None
-    links: list[ColumnLink] = Field(default_factory=list)
+    kind: ColumnKind | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +124,7 @@ class MergedColumn(BaseModel):
     name: str
     dtype: str
     description: str | None = None
-    links: list[ColumnLink] = Field(default_factory=list)
+    kind: ColumnKind | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +192,7 @@ def merge_columns(
                 name=col.name,
                 dtype=col.dtype,
                 description=ann.description if ann else None,
-                links=ann.links if ann else [],
+                kind=ann.kind if ann else None,
             )
         )
     return merged
