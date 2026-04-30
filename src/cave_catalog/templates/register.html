@@ -3,6 +3,24 @@
 {% block content %}
 <h1>Register a Table</h1>
 
+<style>
+  #register-form .form-group > label {
+    color: var(--color-text);
+    font-weight: 600;
+    font-size: 13px;
+  }
+  #register-form .field-label-name {
+    color: var(--color-text);
+    font-weight: 600;
+    font-size: 13px;
+  }
+  #register-form .field-label-help {
+    color: var(--color-text-muted);
+    font-weight: 400;
+    font-size: 12px;
+  }
+</style>
+
 <form id="register-form">
 
   {# ── Step 1: URI + Preview ── #}
@@ -72,12 +90,12 @@
       </div>
 
       <div class="form-group">
-        <label for="revision">Revision</label>
+        <label for="revision" class="field-label-inline"><span class="field-label-name">Revision</span><span class="field-label-help"> · Use to indicate updates to previous tables.</span></label>
         <input type="number" id="revision" name="revision" value="0" min="0">
       </div>
 
       <div class="form-group">
-        <label for="mutability">Mutability</label>
+        <label for="mutability" class="field-label-inline"><span class="field-label-name">Mutability</span><span class="field-label-help"> · Whether a user should expect the data at this URI to be changing over time.</span></label>
         <select id="mutability" name="mutability">
           {% for value in mutability_options %}
           <option value="{{ value }}" {{ "selected" if value == "static" else "" }}>{{ value }}</option>
@@ -86,7 +104,7 @@
       </div>
 
       <div class="form-group">
-        <label for="maturity">Maturity</label>
+        <label for="maturity" class="field-label-inline"><span class="field-label-name">Maturity</span><span class="field-label-help"> · How finished or reliable a table is.</span></label>
         <select id="maturity" name="maturity">
           {% for value in maturity_options %}
           <option value="{{ value }}" {{ "selected" if value == "stable" else "" }}>{{ value }}</option>
@@ -95,9 +113,9 @@
       </div>
 
       <div class="form-group">
-        <label for="is-managed">
+        <label for="is-managed" class="field-label-inline">
           <input type="checkbox" id="is-managed" name="is_managed" value="true" checked>
-          Managed
+          <span class="field-label-name">Managed</span><span class="field-label-help"> · Whether this URI is at a publicly accessible cloud path or one where access will be gated by the catalog service (managed).</span>
         </label>
       </div>
 

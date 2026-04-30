@@ -243,6 +243,19 @@ th {
   display: block;
   margin-bottom: 4px;
 }
+.form-group label.field-label-inline {
+  line-height: 1.35;
+}
+.form-group label .field-label-name {
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 13px;
+}
+.form-group label .field-label-help {
+  color: #94a3b8;
+  font-weight: 400;
+  font-size: 11px;
+}
 .form-row {
   display: flex;
   gap: 12px;
