@@ -41,7 +41,6 @@ from cave_catalog.table_schemas import TableResponse
 from cave_catalog.validation import (
     check_name_reservation as _check_name_reservation,
     validate_asset_name,
-    NAME_FORMAT_MESSAGE,
 )
 from cave_catalog.validation import run_validation_pipeline
 
