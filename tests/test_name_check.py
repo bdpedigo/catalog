@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-
 from cave_catalog.schemas import ValidationCheck
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -173,7 +171,6 @@ class TestCheckNameFragment:
 # ---------------------------------------------------------------------------
 
 import pytest
-
 from cave_catalog.validation import validate_asset_name
 
 
