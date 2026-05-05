@@ -188,6 +188,72 @@ class TestDetailPage:
         assert resp.status_code == 200
         assert "/edit" in resp.text
 
+    async def test_detail_page_shows_column_kind(self, client, monkeypatch):
+        monkeypatch.setenv("DATASTACKS", "minnie65_public")
+
+        from cave_catalog.table_schemas import ColumnInfo, TableMetadata
+
+        # Mock extractor so cached metadata includes the annotated columns
+        meta = TableMetadata(
+            n_rows=50,
+            n_columns=2,
+            n_bytes=1000,
+            columns=[
+                ColumnInfo(name="pt_root_id", dtype="int64"),
+                ColumnInfo(name="pre_pt_root_id", dtype="int64"),
+            ],
+            partition_columns=[],
+        )
+        mock_extractor = AsyncMock()
+        mock_extractor.extract = AsyncMock(return_value=meta)
+        monkeypatch.setattr(
+            "cave_catalog.routers.tables.get_extractor",
+            lambda fmt: mock_extractor,
+        )
+        _patch_validation(monkeypatch)
+        monkeypatch.setattr(
+            "cave_catalog.routers.tables.run_validation_pipeline",
+            AsyncMock(return_value=_passing_report()),
+        )
+
+        payload = {
+            "datastack": "minnie65_public",
+            "name": "kind_display_table",
+            "revision": 0,
+            "uri": "gs://bucket/kind_display_table/",
+            "format": "delta",
+            "is_managed": True,
+            "mutability": "static",
+            "maturity": "stable",
+            "properties": {},
+            "column_annotations": [
+                {
+                    "column_name": "pt_root_id",
+                    "description": "Root ID",
+                    "kind": {"kind": "segmentation", "node_level": "root_id"},
+                },
+                {
+                    "column_name": "pre_pt_root_id",
+                    "description": "Pre-synaptic",
+                    "kind": {
+                        "kind": "materialization",
+                        "target_table": "nucleus_detection_v0",
+                        "target_column": "id",
+                    },
+                },
+            ],
+        }
+        resp = await client.post("/api/v1/tables/register", json=payload)
+        assert resp.status_code == 201, resp.text
+        asset = resp.json()
+
+        resp = await client.get(f"/ui/explore/{asset['id']}")
+        assert resp.status_code == 200
+        assert "badge-seg" in resp.text
+        assert "root_id" in resp.text
+        assert "badge-mat" in resp.text
+        assert "nucleus_detection_v0" in resp.text
+
 
 class TestEditPage:
     """Tests for GET/POST /ui/explore/{id}/edit."""

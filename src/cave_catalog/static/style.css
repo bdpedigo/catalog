@@ -495,6 +495,9 @@ code {
 .badge-asset { background: var(--color-text-muted); }
 .badge-user { background: #2563eb; }
 .badge-materialization { background: #059669; }
+.badge-mat { background: #059669; }
+.badge-seg { background: #7c3aed; }
+.badge-point { background: #0891b2; }
 
 /* Empty states */
 .empty-state {

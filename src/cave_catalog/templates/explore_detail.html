@@ -56,7 +56,7 @@
         <th>Name</th>
         <th>Type</th>
         <th>Description</th>
-        <th>Links</th>
+        <th>Kind</th>
       </tr>
     </thead>
     <tbody>
@@ -66,10 +66,16 @@
         <td><code>{{ col.dtype }}</code></td>
         <td>{% if col.description %}{{ col.description }}{% else %}—{% endif %}</td>
         <td>
-          {% if col.links %}
-            {% for link in col.links %}
-            <span class="link-ref">→ {{ link.target_table }}.{{ link.target_column }}</span>{% if not loop.last %}<br>{% endif %}
-            {% endfor %}
+          {% if col.kind %}
+            {% if col.kind.kind == "materialization" %}
+            <span class="badge badge-mat">mat</span> → {{ col.kind.target_table }}.{{ col.kind.target_column }}
+            {% elif col.kind.kind == "segmentation" %}
+            <span class="badge badge-seg">seg</span> {{ col.kind.node_level }}
+            {% elif col.kind.kind == "packed_point" %}
+            <span class="badge badge-point">packed point</span>{% if col.kind.resolution %} res={{ col.kind.resolution | join("×") }}{% endif %}
+            {% elif col.kind.kind == "split_point" %}
+            <span class="badge badge-point">split point</span> {{ col.kind.axis }}{% if col.kind.point_group %} ({{ col.kind.point_group }}){% endif %}{% if col.kind.resolution %} res={{ col.kind.resolution }}{% endif %}
+            {% endif %}
           {% else %}
           —
           {% endif %}
