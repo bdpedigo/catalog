@@ -186,13 +186,13 @@ def merge_columns(
 
     merged: list[MergedColumn] = []
     for col in metadata.columns:
-        ann = ann_by_name.get(col.name)
+        col_ann: ColumnAnnotation | None = ann_by_name.get(col.name)
         merged.append(
             MergedColumn(
                 name=col.name,
                 dtype=col.dtype,
-                description=ann.description if ann else None,
-                kind=ann.kind if ann else None,
+                description=col_ann.description if col_ann else None,
+                kind=col_ann.kind if col_ann else None,
             )
         )
     return merged

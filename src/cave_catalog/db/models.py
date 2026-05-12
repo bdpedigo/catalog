@@ -1,16 +1,17 @@
 import uuid
 from collections.abc import MutableMapping
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
-class _FallbackPolymorphicMap(dict, MutableMapping):
+class _FallbackPolymorphicMap(dict, MutableMapping):  # type: ignore[type-arg]
     """Allow unknown ``asset_type`` values to load as the base ``Asset`` class."""
 
-    def __missing__(self, key):
+    def __missing__(self, key: str) -> Any:
         return self["asset"]
 
 

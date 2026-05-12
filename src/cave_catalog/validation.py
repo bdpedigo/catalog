@@ -124,12 +124,17 @@ async def check_uri_reachable(uri: str) -> ValidationCheck:
         return ValidationCheck(passed=False, message=f"URI unreachable: {exc}")
 
 
-async def check_format_sniff(uri: str, fmt: str) -> ValidationCheck:
+async def check_format_sniff(uri: str, fmt: str | None) -> ValidationCheck:
     """Validate the format at *uri* using a library-based sniffer.
 
     Returns a passing check with a message if no sniffer is registered for *fmt*.
     """
     logger.debug("check_format_sniff", uri=uri, fmt=fmt)
+
+    if fmt is None:
+        return ValidationCheck(
+            passed=True, message="No format specified; skipping sniff"
+        )
 
     sniffer = FORMAT_SNIFFERS.get(fmt.lower())
     if sniffer is None:
@@ -510,7 +515,7 @@ async def run_validation_pipeline(
     datastack: str,
     name: str,
     uri: str,
-    fmt: str,
+    fmt: str | None,
     properties: dict,
     existing_id: Any = None,
     client: AsyncClient,

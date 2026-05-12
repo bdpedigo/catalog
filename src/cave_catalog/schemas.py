@@ -63,7 +63,7 @@ class AssetResponse(BaseModel):
 
 class AccessResponse(BaseModel):
     uri: str
-    format: str
+    format: str | None = None
     token: str | None = None
     token_type: str | None = None
     expires_in: int | None = None

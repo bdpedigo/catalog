@@ -64,7 +64,9 @@ def create_app() -> FastAPI:
     app.include_router(ui.router)
 
     @app.exception_handler(_RedirectException)
-    async def _handle_redirect(request: Request, exc: _RedirectException):
+    async def _handle_redirect(
+        request: Request, exc: _RedirectException
+    ) -> RedirectResponse:
         return RedirectResponse(url=exc.url, status_code=302)
 
     _pkg_dir = Path(__file__).resolve().parent

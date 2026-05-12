@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from starlette.responses import Response
+
 from cave_catalog.auth.middleware import (
     TOKEN_COOKIE_NAME,
     AuthUser,
@@ -68,7 +70,7 @@ async def login(
     request: Request,
     next: str = "/ui/register",
     settings: Settings = Depends(get_settings),
-):
+) -> RedirectResponse:
     """Redirect to middle_auth OAuth authorize endpoint."""
     # Build callback URL that includes the final destination
     callback_url = str(request.url_for("ui_callback")) + f"?next={next}"
@@ -80,7 +82,7 @@ async def login(
 async def callback(
     request: Request,
     next: str = "/ui/register",
-):
+) -> Response:
     """OAuth callback — extract token from query param, set cookie, redirect."""
     token = request.query_params.get(TOKEN_COOKIE_NAME) or request.query_params.get(
         "token"
@@ -91,7 +93,7 @@ async def callback(
 
 
 @router.get("/logout")
-async def logout():
+async def logout() -> RedirectResponse:
     """Clear the auth cookie and redirect to login."""
     response = RedirectResponse(url="/ui/login", status_code=302)
     response.delete_cookie(key=TOKEN_COOKIE_NAME)
@@ -132,7 +134,7 @@ async def select_datastack(
     request: Request,
     datastack: str = "",
     settings: Settings = Depends(get_settings),
-):
+) -> RedirectResponse:
     """Set the selected datastack cookie (called via HTMX from the selector)."""
     referer = request.headers.get("referer", "/ui/register")
     response = RedirectResponse(url=referer, status_code=302)
@@ -148,7 +150,7 @@ async def register_page(
     request: Request,
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
-):
+) -> Response:
     datastack = _get_current_datastack(request, settings)
     if datastack:
         asyncio.create_task(warm_cache(datastack))
@@ -167,7 +169,7 @@ async def explore_page(
     request: Request,
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
-):
+) -> Response:
     datastack = _get_current_datastack(request, settings)
     fields = ASSET_FIELDS
     default_fields = get_default_fields()
@@ -211,7 +213,7 @@ async def explore_assets_fragment(
     asset_type: str = Query(default=""),
     mutability: str = Query(default=""),
     source: str = Query(default=""),
-):
+) -> Response:
     datastack = _get_current_datastack(request, settings)
 
     # Build filter params for API call
@@ -266,13 +268,13 @@ async def _fetch_assets(
     offset: int = 0,
     sort_by: str = "name",
     sort_order: str = "asc",
-    **filters,
+    **filters: str,
 ) -> tuple[list[dict], int]:
     """Fetch assets from the internal API via ASGI transport."""
     if not datastack:
         return [], 0
 
-    params = {
+    params: dict[str, str | int] = {
         "datastack": datastack,
         "limit": limit,
         "offset": offset,
@@ -310,7 +312,7 @@ async def explore_detail_page(
     request: Request,
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
-):
+) -> Response:
     asset = await _fetch_asset(request, asset_id, user)
     ctx = _page_context(request, user, settings, "explore")
     ctx["asset"] = asset
@@ -328,7 +330,7 @@ async def explore_edit_page(
     request: Request,
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
-):
+) -> Response:
     asset = await _fetch_asset(request, asset_id, user)
     ctx = _page_context(request, user, settings, "explore")
     ctx["asset"] = asset
@@ -342,7 +344,7 @@ async def explore_edit_submit(
     request: Request,
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
-):
+) -> Response:
     form = await request.form()
 
     # Build PATCH payload for mutable fields
@@ -350,9 +352,9 @@ async def explore_edit_submit(
     maturity = form.get("maturity")
     if maturity:
         patch_body["maturity"] = maturity
-    access_group = form.get("access_group", "").strip()
+    access_group = str(form.get("access_group", "")).strip()
     patch_body["access_group"] = access_group if access_group else None
-    expires_at = form.get("expires_at", "").strip()
+    expires_at = str(form.get("expires_at", "")).strip()
     patch_body["expires_at"] = expires_at if expires_at else None
 
     # Build annotation payload for tables (if columns present)
@@ -362,14 +364,16 @@ async def explore_edit_submit(
         if annotations is None:
             annotations = []
         col_name = form[f"col_name_{col_idx}"]
-        description = form.get(f"col_desc_{col_idx}", "").strip() or None
+        description = str(form.get(f"col_desc_{col_idx}", "")).strip() or None
 
         # Parse kind for this column
-        kind_type = form.get(f"col_kind_{col_idx}", "").strip()
-        kind = None
+        kind_type = str(form.get(f"col_kind_{col_idx}", "")).strip()
+        kind: dict[str, object] | None = None
         if kind_type == "materialization":
-            target_table = form.get(f"col_kind_target_table_{col_idx}", "").strip()
-            target_column = form.get(f"col_kind_target_column_{col_idx}", "").strip()
+            target_table = str(form.get(f"col_kind_target_table_{col_idx}", "")).strip()
+            target_column = str(
+                form.get(f"col_kind_target_column_{col_idx}", "")
+            ).strip()
             if target_table and target_column:
                 kind = {
                     "kind": "materialization",
@@ -377,8 +381,8 @@ async def explore_edit_submit(
                     "target_column": target_column,
                 }
         elif kind_type == "segmentation":
-            node_level = form.get(f"col_kind_node_level_{col_idx}", "").strip()
-            custom_level = form.get(f"col_kind_custom_level_{col_idx}", "").strip()
+            node_level = str(form.get(f"col_kind_node_level_{col_idx}", "")).strip()
+            custom_level = str(form.get(f"col_kind_custom_level_{col_idx}", "")).strip()
             if node_level == "custom" and custom_level:
                 node_level = f"level{custom_level}_id"
             if node_level and node_level != "custom":
@@ -387,8 +391,8 @@ async def explore_edit_submit(
                     "node_level": node_level,
                 }
         elif kind_type == "packed_point":
-            resolution_raw = form.get(f"col_kind_resolution_{col_idx}", "").strip()
-            resolution = None
+            resolution_raw = str(form.get(f"col_kind_resolution_{col_idx}", "")).strip()
+            resolution: list[float] | None = None
             if resolution_raw:
                 parts = [
                     float(x.strip()) for x in resolution_raw.split(",") if x.strip()
@@ -400,18 +404,18 @@ async def explore_edit_submit(
                 "resolution": resolution,
             }
         elif kind_type == "split_point":
-            axis = form.get(f"col_kind_axis_{col_idx}", "").strip() or None
+            axis = str(form.get(f"col_kind_axis_{col_idx}", "")).strip() or None
             point_group = (
-                form.get(f"col_kind_point_group_{col_idx}", "").strip() or None
+                str(form.get(f"col_kind_point_group_{col_idx}", "")).strip() or None
             )
-            resolution_raw = form.get(f"col_kind_resolution_{col_idx}", "").strip()
-            resolution = float(resolution_raw) if resolution_raw else None
+            resolution_raw = str(form.get(f"col_kind_resolution_{col_idx}", "")).strip()
+            resolution_scalar = float(resolution_raw) if resolution_raw else None
             if axis:
                 kind = {
                     "kind": "split_point",
                     "axis": axis,
                     "point_group": point_group,
-                    "resolution": resolution,
+                    "resolution": resolution_scalar,
                 }
 
         annotations.append(
@@ -503,7 +507,7 @@ async def preview_table(
     request: Request,
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
-):
+) -> Response:
     """Extract metadata from a URI and return a preview HTML fragment."""
     form = await request.form()
     uri = str(form.get("uri", "")).strip()
@@ -591,28 +595,28 @@ def _parse_column_annotations(form: dict) -> list[dict]:
                 }
         elif kind_type == "packed_point":
             resolution_raw = form.get(f"col_kind_resolution_{i}", "").strip()
-            resolution = None
+            resolution_list: list[float] | None = None
             if resolution_raw:
                 parts = [
                     float(x.strip()) for x in resolution_raw.split(",") if x.strip()
                 ]
                 if len(parts) == 3:
-                    resolution = parts
+                    resolution_list = parts
             kind = {
                 "kind": "packed_point",
-                "resolution": resolution,
+                "resolution": resolution_list,
             }
         elif kind_type == "split_point":
             axis = form.get(f"col_kind_axis_{i}", "").strip() or None
             point_group = form.get(f"col_kind_point_group_{i}", "").strip() or None
             resolution_raw = form.get(f"col_kind_resolution_{i}", "").strip()
-            resolution = float(resolution_raw) if resolution_raw else None
+            resolution_scalar = float(resolution_raw) if resolution_raw else None
             if axis:
                 kind = {
                     "kind": "split_point",
                     "axis": axis,
                     "point_group": point_group,
-                    "resolution": resolution,
+                    "resolution": resolution_scalar,
                 }
 
         if description or kind:
@@ -632,7 +636,7 @@ async def register_submit(
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
     session: AsyncSession = Depends(get_session),
-):
+) -> Response:
     """Handle registration form submission — call the tables API internally."""
     form_data = await request.form()
     form = dict(form_data)
@@ -770,7 +774,7 @@ async def linkable_targets_fragment(
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
     version: int | None = None,
-):
+) -> HTMLResponse:
     """Return HTML <option> list of linkable targets for the current datastack."""
     datastack = _get_current_datastack(request, settings)
     if not datastack:
@@ -796,7 +800,7 @@ async def target_columns_fragment(
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
     version: int | None = None,
-):
+) -> HTMLResponse:
     """Return HTML <option> list of columns for a selected link target."""
     datastack = _get_current_datastack(request, settings)
     if not datastack:
@@ -820,7 +824,7 @@ async def check_name_fragment(
     user: AuthUser = Depends(require_ui_auth),
     settings: Settings = Depends(get_settings),
     session: AsyncSession = Depends(get_session),
-):
+) -> HTMLResponse:
     """Return HTML fragment with ✓/✗ name availability indicator."""
     name = name.strip()
     if not name:
@@ -869,7 +873,7 @@ async def check_uri_fragment(
     uri: str = Query(""),
     user: AuthUser = Depends(require_ui_auth),
     session: AsyncSession = Depends(get_session),
-):
+) -> HTMLResponse:
     """Return HTML fragment with ✓/✗ URI uniqueness indicator."""
     uri = uri.strip()
     if not uri:

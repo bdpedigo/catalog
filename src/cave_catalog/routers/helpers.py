@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cave_catalog.auth.middleware import AuthUser
 from cave_catalog.config import Settings
 from cave_catalog.db.models import Asset, Table
-from cave_catalog.schemas import AssetResponse, ValidationReport
+from cave_catalog.schemas import AssetResponse, Maturity, Mutability, ValidationReport
 from cave_catalog.table_schemas import (
     ColumnAnnotation,
     TableMetadata,
@@ -221,8 +221,8 @@ def table_to_response(table: Table) -> TableResponse:
         asset_type=table.asset_type,
         owner=table.owner,
         is_managed=table.is_managed,
-        mutability=table.mutability,
-        maturity=table.maturity,
+        mutability=Mutability(table.mutability),
+        maturity=Maturity(table.maturity),
         properties=table.properties,
         access_group=table.access_group,
         created_at=table.created_at,

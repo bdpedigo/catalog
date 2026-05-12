@@ -292,6 +292,7 @@ async def update_annotations(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Asset is not a table",
         )
+    assert isinstance(table, Table)
 
     require_datastack_permission(user, settings, table.datastack, "edit")
 
@@ -387,8 +388,15 @@ async def refresh_metadata(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Asset is not a table",
         )
+    assert isinstance(table, Table)
 
     require_datastack_permission(user, settings, table.datastack, "edit")
+
+    if not table.format:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Table has no format set",
+        )
 
     try:
         extractor = get_extractor(table.format)

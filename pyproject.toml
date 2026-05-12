@@ -39,6 +39,7 @@ dev = [
     "pytest-httpx>=0.30",
     "pytest>=8.0",
     "ruff>=0.5",
+    "types-cachetools>=6.2.0.20260408",
 ]
 
 [build-system]

@@ -277,13 +277,13 @@ def get_filterable_fields() -> list[FieldDef]:
 # ---------------------------------------------------------------------------
 
 
-def resolve_field(data: dict, key: str):
+def resolve_field(data: dict, key: str) -> Any | None:
     """Resolve a dot-path key against a nested dictionary.
 
     Returns None if any segment is missing or an intermediate is None.
     """
     segments = key.split(".")
-    current = data
+    current: Any = data
     for segment in segments:
         if current is None:
             return None
@@ -299,7 +299,7 @@ def resolve_field(data: dict, key: str):
 # ---------------------------------------------------------------------------
 
 
-def _format_number(value, fmt: str = ",") -> str:
+def _format_number(value: Any, fmt: str = ",") -> str:
     """Format a number. fmt controls grouping (',' = commas, '' = plain)."""
     if isinstance(value, int):
         return f"{value:{fmt}}"
@@ -308,7 +308,7 @@ def _format_number(value, fmt: str = ",") -> str:
     return str(value)
 
 
-def _format_bytes(value) -> str:
+def _format_bytes(value: Any) -> str:
     """Format byte count as human-readable size."""
     if value is None:
         return "—"
@@ -325,7 +325,7 @@ def _format_bytes(value) -> str:
     return f"{n:.1f} EB"
 
 
-def _format_datetime(value) -> str:
+def _format_datetime(value: Any) -> str:
     """Format a datetime string or object to short ISO."""
     if value is None:
         return "—"
@@ -336,7 +336,7 @@ def _format_datetime(value) -> str:
     return s[:19]
 
 
-def _format_badge(value) -> str:
+def _format_badge(value: Any) -> str:
     """Format a value as badge-style text."""
     if value is None:
         return "—"
