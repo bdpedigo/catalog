@@ -8,7 +8,9 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev
 
 COPY src ./src
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
-EXPOSE 8000
+EXPOSE 80
 
-CMD ["uv", "run", "uvicorn", "cave_catalog.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["./entrypoint.sh"]
