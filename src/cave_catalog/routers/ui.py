@@ -6,7 +6,6 @@ import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from starlette.responses import Response
 
 from cave_catalog.auth.middleware import (
