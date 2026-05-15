@@ -1,6 +1,7 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from importlib.metadata import version
 from pathlib import Path
 
 import structlog
@@ -46,7 +47,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="CAVE Catalog",
         description="Asset registry, discovery, and credential vending for the CAVE stack.",
-        version="0.1.0",
+        version=version("cave-catalog"),
         lifespan=lifespan,
     )
 
